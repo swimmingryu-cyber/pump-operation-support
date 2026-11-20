@@ -1,0 +1,6 @@
+name = "pump-operation-support"
+compatibility_date = "2026-11-20"
+workers_dev = true
+
+[assets]
+directory = "./public"
