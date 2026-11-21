@@ -83,3 +83,39 @@ p { margin: 0; }
 #pressure-details summary { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 #pressure-paths { margin: 4px 0 0; padding-left: 16px; }
 .line button .pressure-basis { color: #ff939a; font-size: 12px; font-weight: 700; }
+
+.hose-controls, .hose-field {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+.hose-controls { gap: 6px; }
+.branch-hose-step[open] {
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html:has(.branch-hose-step[open]) { overflow: hidden; }
+.branch-hose-step .options {
+  overflow: clip;
+  padding: 3px;
+}
+@media (orientation: landscape) {
+  .branch-hose-step .options {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 10px;
+  }
+  .branch-hose-step .elevation-choices {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (orientation: landscape) and (max-height: 280px) {
+  .branch-hose-step .hose-controls {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 5fr);
+  }
+  .branch-hose-step .editor button {
+    min-height: 38px;
+    padding-inline: 3px;
+  }
+  .branch-hose-step .editor h2 { font-size: clamp(15px, 2.5vw, 20px); }
+}

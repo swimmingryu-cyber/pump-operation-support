@@ -289,11 +289,38 @@ function elevationControl(branch, canSave) {
   group.append(label, choices, text('ポンプより高い場合は＋、低い場合は−'));
   return group;
 }
-function draw(){const l=ctx.draft,b=l.branches[ctx.j??0],o=$('options');o.replaceChildren();o.scrollTop=0;$('title').textContent=`${ports[ctx.i].label}の放口 ${ctx.j===null?'主線':ctx.j?'筒先B':'筒先A'}｜${['① ホース口径・本数','② 分岐金具','③ 筒先側ホース口径・本数','④ 筒先種類','⑤ 筒先設定'][step]}`;$('back').hidden=step===(ctx.j===null?0:l.fork?2:3);
+function hoseControls(target, nextStep) {
+  const group = document.createElement('div');
+  group.className = 'hose-controls';
+  const diameters = grid(2);
+  for (const diameter of [65, 50]) {
+    diameters.append(choice(diameter + ' mm', () => {
+      target.diam = diameter;
+      draw();
+    }, target.diam === diameter));
+  }
+  const counts = grid(5);
+  for (let count = 1; count <= 10; count++) {
+    counts.append(choice(count + ' 本', () => {
+      target.count = count;
+      advance(nextStep);
+    }));
+  }
+  for (const [label, choices] of [['ホース口径', diameters], ['本数（1本20m）', counts]]) {
+    const field = document.createElement('div');
+    field.className = 'hose-field';
+    field.append(text(label), choices);
+    group.append(field);
+  }
+  return group;
+}
+function draw(){const l=ctx.draft,b=l.branches[ctx.j??0],o=$('options');o.replaceChildren();o.scrollTop=0;$('overlay').classList.toggle('branch-hose-step', step === 2);$('title').textContent=`${ports[ctx.i].label}の放口 ${ctx.j===null?'主線':ctx.j?'筒先B':'筒先A'}｜${['① ホース口径・本数','② 分岐金具','③ 筒先側ホース口径・本数','④ 筒先種類','⑤ 筒先設定'][step]}`;$('back').hidden=step===(ctx.j===null?0:l.fork?2:3);
 if ((l.fork && step === 2) || (!l.fork && step === 3)) {
   o.append(elevationControl(b, ctx.j !== null && b.active && Boolean(b.setting)));
 }
-if(step===0||step===2){const target=step===0?l:b,g=grid(2);for(const d of [65,50])g.append(choice(d+' mm',()=>{target.diam=d;draw()},target.diam===d));o.appendChild(text('ホース口径'));o.appendChild(g);o.appendChild(text('本数（1本20m）'));const counts=grid(5);for(let n=1;n<=10;n++)counts.append(choice(n+' 本',()=>{target.count=n;advance(step===0?1:3)}));o.appendChild(counts)}
+if (step === 0 || step === 2) {
+  o.append(hoseControls(step === 0 ? l : b, step === 0 ? 1 : 3));
+}
 else if(step===1){const g=grid(2);g.append(choice('分岐金具 あり',()=>{l.fork=true;l.branches[0].active=true;advance(2)}),choice('分岐金具 なし',()=>{l.fork=false;l.branches[0].active=true;l.branches[1]=emptyBranch();advance(3)}));o.append(g)}
 else if(step===3){const g=grid(2);for(const name of ['ダブコン','クアドラ'])g.append(choice(name,()=>{if(b.nozzle!==name)b.setting=null;b.nozzle=name;partialDiameter=b.setting&&name==='ダブコン'?Number(b.setting.split('/')[0]):null;partialFlow=b.setting&&name==='クアドラ'?Number(b.setting.split('/')[0]):null;advance(4)}));o.append(g)}
 else if(step===4){if(b.nozzle==='ダブコン'){o.append(text('口径（mm）'));const g=grid(6);for(const d of [10,13,15,19,23,26])g.append(choice(d+'',()=>{partialDiameter=d;draw()},partialDiameter===d));o.append(g,text('流量（L/min）／400を超えると注意。保持限界は流量だけでは決められません。'));const f=grid(5);for(const q of [300,400,500,600,700,800,900,1000,1100,1200])f.append(choice(q+'',()=>{if(partialDiameter===null)return;b.setting=partialDiameter+'/'+q;finish()},false,q>400?'caution':''));o.append(f,text(partialDiameter===null?'先に口径を選択してください':'流量を選ぶと設定を保存します。反動力は概算で別途警告します。'))}
