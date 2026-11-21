@@ -66,3 +66,43 @@ else if(step===4){if(b.nozzle==='ダブコン'){o.append(text('口径（mm）'))
 else{const g=grid(4);o.append(text('公称流量レンジ（L/min）'));for(const q of [110,230,360,470])g.append(choice(q+'',()=>{partialFlow=q;draw()},partialFlow===q));o.append(g,text('ノズル圧力（MPa）'));const h=grid(3);for(const p of [0.5,0.6,0.7])h.append(choice(p.toFixed(1),()=>{if(partialFlow===null)return;b.setting=partialFlow+'/'+p;finish()}));o.append(h,text(partialFlow===null?'先に流量レンジを選択してください':'流量は0.6MPaを基準とした平方根則で概算します。'))}}
 }
 $('water').onclick=()=>{data.water=data.water==='無圧'?'有圧':'無圧';save()};$('backpressure').onclick=()=>{const values=[0,10,20,30];data.backpressure=values[(values.indexOf(data.backpressure)+1)%values.length];save()};render();
+
+const fullscreenButton = $('fullscreen');
+const screenHint = $('screen-hint');
+const installed = window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches
+  || navigator.standalone === true;
+
+function syncFullscreen() {
+  fullscreenButton.textContent = document.fullscreenElement ? '全画面を終了' : '横向き全画面';
+  screenHint.hidden = true;
+}
+
+fullscreenButton.hidden = installed || !document.fullscreenEnabled;
+if (!installed && !document.fullscreenEnabled) {
+  screenHint.textContent = 'ブラウザのメニューからホーム画面に追加すると、タブ欄を省いて起動できます。';
+  screenHint.hidden = false;
+}
+
+document.addEventListener('fullscreenchange', syncFullscreen);
+fullscreenButton.addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    await document.documentElement.requestFullscreen();
+  } catch {
+    screenHint.textContent = '全画面にできませんでした。ブラウザのメニューからホーム画面に追加できます。';
+    screenHint.hidden = false;
+    return;
+  }
+
+  try {
+    await screen.orientation.lock('landscape');
+  } catch {
+    if (window.matchMedia('(orientation: portrait)').matches) {
+      screenHint.textContent = '端末を横向きにしてください。';
+      screenHint.hidden = false;
+    }
+  }
+});
