@@ -17,9 +17,10 @@ p { margin: 0; }
 .deck { display: grid; grid-template-columns: minmax(0, 45fr) minmax(0, 55fr); grid-template-areas: "vehicle lines"; align-items: start; }
 .deck.flipped { grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); grid-template-areas: "lines vehicle"; }
 .vehicle { grid-area: vehicle; min-width: 0; }
-.map { height: max(128px, var(--lines-height, 0px)); position: relative; }
+.map { height: max(176px, var(--lines-height, 0px)); position: relative; }
 .map svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.flipped svg { transform: scaleX(-1); }
+.pump-truck { transform-origin: 0 50%; transform: scaleY(var(--truck-scale, 1)); }
+.flipped .map svg { transform: scaleX(-1); }
 [data-hose] { fill: none; stroke: #6bd4fa; stroke-width: 3; vector-effect: non-scaling-stroke; visibility: hidden; }
 [data-hose].attached { visibility: visible; }
 [data-hose].paused { stroke: #ffc374; stroke-dasharray: 7 4; }
@@ -28,16 +29,16 @@ p { margin: 0; }
 .port.configured { border-color: #6bd4fa; }
 .port[data-port$=rear] { --port-x: 23%; }
 .port[data-port$=front] { --port-x: 54%; }
-.port[data-port^=left] { --port-y: 30%; }
-.port[data-port^=right] { --port-y: 70%; }
+.port[data-port^=left] { --port-y: calc(50% - 34px); }
+.port[data-port^=right] { --port-y: calc(50% + 34px); }
 .pump { display: grid; gap: 2px; padding: 4px; font-size: 12px; }
 .waterbar { flex-wrap: wrap; }
 .pressure { color: #ffdb65; font-size: clamp(15px, 2.7vw, 24px); }
 .alarm, .caution { color: #ffcf74; }
 .danger { color: #ff9999; }
-.lines { grid-area: lines; min-width: 0; display: grid; gap: 4px; }
-.lines p { align-self: center; padding: 10px; color: #c7daee; }
-.line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.65fr); gap: 3px; padding: 3px; border-left: 3px solid #6bd4fa; border-radius: 7px; background: #172d46; }
+.lines { grid-area: lines; min-width: 0; display: grid; grid-template-rows: repeat(4, minmax(44px, 1fr)); gap: 4px; }
+.lines p { grid-row: 1 / -1; align-self: center; padding: 10px; color: #c7daee; }
+.line { grid-row: var(--slot); align-self: center; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.65fr); gap: 3px; padding: 3px; border-left: 3px solid #6bd4fa; border-radius: 7px; background: #172d46; }
 .flipped .line { border-left: 0; border-right: 3px solid #6bd4fa; }
 .line.paused { background: #463322; border-color: #ffc374; }
 .line button { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }

@@ -5,19 +5,17 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0d1929">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>消防ポンプ運用支援 v0.8.5</title>
+  <title>消防ポンプ運用支援 v0.8.6</title>
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./style.css?v=085">
+  <link rel="stylesheet" href="./style.css?v=086">
 </head>
 <body>
   <main class="shell" id="main">
     <header class="top">
-      <strong>消防ポンプ運用支援 <small>v0.8.5</small></strong>
+      <strong>消防ポンプ運用支援 <small>v0.8.6</small></strong>
       <button id="flip" type="button" aria-pressed="false">⇄ 左右反転</button>
-      <button id="fullscreen" type="button">横向き全画面</button>
     </header>
-    <p class="hint" id="screen-hint" role="status" hidden></p>
     <div class="deck" id="deck">
       <section class="vehicle" aria-label="消防車とポンプ">
         <div class="map" id="map">
@@ -27,17 +25,15 @@
             <path data-hose="right-front" d="M144 131V139Q144 147 156 147H300"/>
             <path data-hose="right-rear" d="M72 131V156Q72 168 86 168H300"/>
             <g class="pump-truck">
-              <rect x="43" y="57" width="38" height="16" rx="4" fill="#09111f"/>
-              <rect x="43" y="119" width="38" height="16" rx="4" fill="#09111f"/>
-              <rect x="150" y="57" width="35" height="16" rx="4" fill="#09111f"/>
-              <rect x="150" y="119" width="35" height="16" rx="4" fill="#09111f"/>
-              <rect x="35" y="65" width="166" height="62" rx="12" fill="#c63d42" stroke="#ff9694"/>
-              <rect x="47" y="74" width="77" height="44" rx="5" fill="#7b2934"/>
-              <path d="M58 84H112M58 92H112M58 100H112M58 108H112" stroke="#e99ea4"/>
-              <rect x="133" y="73" width="59" height="46" rx="8" fill="#e75c59"/>
-              <path d="M175 78L185 82V110L175 114Z" fill="#b9dcea"/>
-              <rect x="141" y="78" width="5" height="36" rx="2" fill="#ffe088"/>
-              <path d="M214 91L223 96L214 101Z" fill="#c8e3f6"/>
+              <rect x="43" y="57" width="38" height="16" rx="4" fill="#070f1b"/>
+              <rect x="43" y="119" width="38" height="16" rx="4" fill="#070f1b"/>
+              <rect x="150" y="57" width="35" height="16" rx="4" fill="#070f1b"/>
+              <rect x="150" y="119" width="35" height="16" rx="4" fill="#070f1b"/>
+              <rect x="44" y="73" width="85" height="46" rx="6" fill="#bec9d3"/>
+              <path d="M54 86H119M54 96H119M54 106H119" stroke="#8598a9" stroke-width="1.6" stroke-linecap="round"/>
+              <rect x="135" y="73" width="57" height="46" rx="8" fill="#e45d5d"/>
+              <path d="M175 78L185 82V110L175 114Z" fill="#a9cddd" stroke="#d9edf5" stroke-width=".6"/><rect x="151" y="76" width="9" height="40" rx="4" fill="#951a2a" stroke="#ffd4d8"/>
+              <path d="M155.5 80V93M155.5 99V112" stroke="#ff8083" stroke-width="4" stroke-linecap="round"/>
             </g>
           </svg>
           <button class="port" data-port="left-rear" type="button" aria-label="車両左後の放口">左後</button>
@@ -65,6 +61,6 @@
       <footer><button id="delete" type="button" class="delete" hidden>ラインを削除</button><button id="back" type="button">← 戻る</button><span class="hint">選択後、次へ進みます</span></footer>
     </div>
   </dialog>
-  <script src="./app.js?v=085"></script>
+  <script src="./app.js?v=086"></script>
 </body>
 </html>

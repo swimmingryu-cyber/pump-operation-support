@@ -70,12 +70,12 @@ function alignHoses() {
     const rowBounds = row.getBoundingClientRect();
     const center = portBounds.left + portBounds.width / 2;
     const x = (data.flipped ? bounds.right - center : center - bounds.left) / bounds.width * 300;
-    const y = key.startsWith('left') ? 57.6 : 134.4;
+    const y = (portBounds.top + portBounds.height / 2 - bounds.top) / bounds.height * 192;
     const end = (rowBounds.top + rowBounds.height / 2 - bounds.top) / bounds.height * 192;
-    const offset = y < 100 ? y - 11 : y + 11;
-    const bend = Math.max(x + 16, key.endsWith('rear') ? 114 : 181);
+    const rear = key.endsWith('rear');
+    const offset = y + (y < 96 ? -1 : 1) * (rear ? 21 : 7);
     document.querySelector('[data-hose="' + key + '"]').setAttribute('d',
-      `M${x} ${y}V${offset}H${bend}C${bend + 28} ${offset} ${bend + 22} ${end} ${bend + 60} ${end}H300`);
+      `M${x} ${y}V${offset}H196C226 ${offset} 237 ${end} 267 ${end}H300`);
   }
 }
 
@@ -100,6 +100,7 @@ function render() {
     const row = document.createElement('div');
     row.className = paused ? 'line paused' : 'line';
     row.dataset.line = key;
+    row.style.setProperty('--slot', index + 1);
     const main = control(label, () => startEdit(index), label + 'の主線を編集');
     const mainDetails = document.createElement('small');
     mainDetails.textContent = `${line.diam} mm × ${line.count}本${line.fork ? '・分岐' : '・直結'}`;
@@ -159,7 +160,9 @@ function render() {
  else alert.textContent='概算値：筒先と連携して調整';
 }
 function updateLayout() {
-  $('map').style.setProperty('--lines-height', $('lines').offsetHeight + 'px');
+  const height = Math.max(176, $('lines').offsetHeight);
+  $('map').style.setProperty('--lines-height', height + 'px');
+  $('map').style.setProperty('--truck-scale', String(176 / height));
   alignHoses();
 }
 function closeOverlay() { $('overlay').close(); }
@@ -226,47 +229,3 @@ $('reset').onclick = () => {
 };
 new ResizeObserver(updateLayout).observe($('lines'));
 window.addEventListener('resize', updateLayout);
-
-const fullscreenButton = $('fullscreen');
-const screenHint = $('screen-hint');
-const installed = window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches
-  || navigator.standalone === true;
-
-function syncFullscreen() {
-  fullscreenButton.textContent = document.fullscreenElement ? '全画面を終了' : '横向き全画面';
-  screenHint.hidden = true;
-}
-
-fullscreenButton.hidden = installed;
-if (!document.fullscreenEnabled) fullscreenButton.textContent = '全画面の使い方';
-if (!installed && !document.fullscreenEnabled) {
-  screenHint.textContent = 'ブラウザのメニューからホーム画面に追加すると、タブ欄を省いて起動できます。';
-}
-
-document.addEventListener('fullscreenchange', syncFullscreen);
-fullscreenButton.addEventListener('click', async () => {
-  if (!document.fullscreenEnabled) {
-    screenHint.hidden = !screenHint.hidden;
-    return;
-  }
-  try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      return;
-    }
-    await document.documentElement.requestFullscreen();
-  } catch {
-    screenHint.textContent = '全画面にできませんでした。ブラウザのメニューからホーム画面に追加できます。';
-    screenHint.hidden = false;
-    return;
-  }
-
-  try {
-    await screen.orientation.lock('landscape');
-  } catch {
-    if (window.matchMedia('(orientation: portrait)').matches) {
-      screenHint.textContent = '端末を横向きにしてください。';
-      screenHint.hidden = false;
-    }
-  }
-});
