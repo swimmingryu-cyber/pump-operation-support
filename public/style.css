@@ -6,11 +6,11 @@ button { color: inherit; font: inherit; border: 1px solid #6885a3; border-radius
 button:focus-visible { outline: 3px solid #ffdb65; outline-offset: 1px; }
 button.selected, button[aria-pressed=true] { background: #285977; border-color: #a4e4ff; }
 .shell { min-height: 100dvh; display: flex; flex-direction: column; gap: 6px; padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); }
-.top, .bottom, .waterbar, .editor header, .editor footer { display: flex; align-items: center; gap: 6px; }
+.top, .bottom, .editor header, .editor footer { display: flex; align-items: center; gap: 6px; }
 .top { flex-wrap: wrap; }
 .top strong { font-size: clamp(14px, 2.4vw, 22px); margin-right: auto; }
 .top small, .hint, .bottom { font-size: 11px; color: #c7daee; }
-.top button, .waterbar button, .bottom button { font-size: 12px; }
+.top button, .bottom button { font-size: 12px; }
 .bottom { justify-content: space-between; margin-top: auto; }
 .bottom button { flex-shrink: 0; }
 p { margin: 0; }
@@ -32,7 +32,6 @@ p { margin: 0; }
 .port[data-port^=left] { --port-y: calc(50% - 34px); }
 .port[data-port^=right] { --port-y: calc(50% + 34px); }
 .pump { display: grid; gap: 2px; padding: 4px; font-size: 12px; }
-.waterbar { flex-wrap: wrap; }
 .pressure { color: #ffdb65; font-size: clamp(15px, 2.7vw, 24px); }
 .alarm, .caution { color: #ffcf74; }
 .danger { color: #ff9999; }
@@ -63,7 +62,7 @@ p { margin: 0; }
 @media (min-width: 480px) {
   .vehicle { display: grid; grid-template-columns: minmax(100px, 39%) minmax(0, 1fr); grid-template-areas: "pump map"; align-items: center; }
   .flipped .vehicle { grid-template-columns: minmax(0, 1fr) minmax(100px, 39%); grid-template-areas: "map pump"; }
-  .map { grid-area: map; }
+  .map { grid-area: map; align-self: start; }
   .pump { grid-area: pump; }
 }
 @media (max-width: 479px) {
@@ -72,3 +71,15 @@ p { margin: 0; }
   .line { grid-template-columns: minmax(0, 1fr); }
   .line button { padding-inline: 3px; }
 }
+
+.elevation { display: grid; gap: 4px; }
+.elevation-choices { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.elevation-choices button { font-size: clamp(15px, 2.7vw, 23px); font-weight: 700; padding-inline: 2px; white-space: nowrap; }
+.line button .nozzle-elevation { display: block; color: #a2ceed; font-weight: 600; }
+@media (max-width: 440px) {
+  .elevation-choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+#total, #pressure-details { font-size: clamp(14px, 2.2vw, 17px); color: #e1edf9; }
+#pressure-details summary { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+#pressure-paths { margin: 4px 0 0; padding-left: 16px; }
+.line button .pressure-basis { color: #ff939a; font-size: 12px; font-weight: 700; }
