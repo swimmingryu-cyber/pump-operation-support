@@ -46,6 +46,7 @@ const data = load();
 let ctx = null, step = 0, partialDiameter = null, partialFlow = null;
 const $ = id => document.getElementById(id);
 function save() {
+  if (!data.lines.some(line => line.active)) data.fixedPressure = null;
   try { localStorage.setItem(storageKey, JSON.stringify(data)); } catch {}
   render();
 }
@@ -176,7 +177,7 @@ function pumpWarnings(result) {
 }
 
 function responseSummary(container, solution, model) {
-  const rows = [['推定ポンプ圧力', pressureText(solution.p)], ['総送水量の目安', flowText(solution.total)]];
+  const rows = [['再計算した推定ポンプ圧力', pressureText(solution.p)], ['総送水量の目安', flowText(solution.total)]];
   for (const path of model.paths) {
     const nozzle = solution.nozzles[path.id];
     const warnings = outletWarnings(path, nozzle);
@@ -206,7 +207,9 @@ function openResponses(model) {
   });
   if (pumpWarnings(baseline)) warnings.unshift(pumpWarnings(baseline));
   original.classList.toggle('response-warning', warnings.length > 0);
-  original.textContent = '変更前：' + (warnings.join(' ／ ') || 'ポンプ ' + pressureText(baseline.p));
+  const before = model.fixed ? '変更前（固定ポンプ吐出圧力）' : '変更前（推定ポンプ圧力）';
+  original.textContent = before + ' ' + pressureText(baseline.p)
+    + (warnings.length ? ' ／ ' + warnings.join(' ／ ') : '');
   const targets = $('response-target');
   targets.replaceChildren(...paths.map(path => new Option(path.name, path.id)));
   targets.value = (paths.find(path => outletWarnings(path, baseline.nozzles[path.id]).danger.length)
