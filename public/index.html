@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0d1929">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>消防ポンプ運用支援 v0.9.18</title>
+  <title>消防ポンプ運用支援 v0.9.19</title>
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./style.css?v=0918">
+  <link rel="stylesheet" href="./style.css?v=0919">
 </head>
 <body>
   <main class="shell" id="main">
     <header class="top">
-      <strong>消防ポンプ運用支援 <small>v0.9.18</small></strong>
+      <strong>消防ポンプ運用支援 <small>v0.9.19</small></strong>
       <button id="reset" type="button">初期化</button>
       <button id="flip" type="button" aria-pressed="false">⇄ 左右反転</button>
     </header>
@@ -44,11 +44,10 @@
           <button id="edit-water-settings" type="button">水利設定</button>
         </div>
         <div class="pump">
-          <div class="pressure-readout"><span id="pump-heading">必要吐出圧力（推定）</span><strong class="pressure">— MPa</strong></div>
+          <div class="pressure-readout"><span id="pump-heading">必要送水圧力</span><strong class="pressure">— MPa</strong></div>
           <div id="total"></div>
           <div id="supply-estimate" class="hint"></div>
           <div id="alert" class="alarm" role="status"></div>
-          <button id="respond" type="button" aria-haspopup="dialog" hidden>対応策</button>
         </div>
       </section>
       <section class="lines" id="lines" aria-label="設定済みホースライン"></section>
@@ -61,25 +60,10 @@
       <footer><button id="delete" type="button" class="delete" hidden>ラインを削除</button><button id="back" type="button">← 戻る</button><span class="hint">選択後、次へ進みます</span></footer>
     </div>
   </dialog>
-  <dialog class="overlay" id="response" aria-labelledby="response-title">
-    <div class="editor">
-      <header><h2 id="response-title">対応策</h2><button id="response-close" type="button">戻る</button></header>
-      <p id="response-original"></p>
-      <div class="options response-options">
-        <p id="response-reference"></p>
-        <label>対象筒先 <select id="response-target"></select></label>
-        <details><summary>筒先口径の変更</summary><div id="response-diameters"></div></details>
-        <details><summary>分岐・放口を絞る</summary><div id="response-throttle"></div></details>
-        <label><input type="checkbox"> 関係する筒先へ変更内容を共有</label>
-        <label><input type="checkbox"> 変更後に関係する筒先の状態を確認</label>
-        <p class="hint" id="response-quadra-note" hidden></p>
-      </div>
-    </div>
-  </dialog>
   <dialog class="overlay" id="water-settings" aria-labelledby="water-settings-title">
     <form class="editor" id="water-settings-form">
       <header><h2 id="water-settings-title">水利設定</h2><button id="water-settings-close" type="button">閉じる</button></header>
-      <div class="options response-options">
+      <div class="options">
         <label>水利 <select id="water-source">
           <option value="">未設定・その他</option>
           <option value="hydrant">有圧水利（消火栓）</option>
@@ -94,13 +78,13 @@
           <p class="hint">吸水高さは水面からポンプ吸水口まで。直列につないだ吸管は投入1本として扱います。吸管損失と送水能力は実車で確認してください。</p>
         </div>
         <div id="hydrant-fields" hidden>
-          <label class="nozzle-ceiling">消火栓の見込給水量（L/min） <input id="hydrant-flow" type="number" inputmode="decimal" min="0" step="any"></label>
+          <label>消火栓の見込給水量（L/min） <input id="hydrant-flow" type="number" inputmode="decimal" min="0" step="any"></label>
           <p class="hint">現場で推定・測定した値を入力。放水中の吸水圧・給水状況は実機で確認してください。</p>
         </div>
       </div>
       <footer><button type="submit">保存</button></footer>
     </form>
   </dialog>
-  <script src="./app.js?v=0918"></script>
+  <script src="./app.js?v=0919"></script>
 </body>
 </html>

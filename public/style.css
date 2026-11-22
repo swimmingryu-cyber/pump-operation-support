@@ -16,7 +16,7 @@ p { margin: 0; }
 .deck { display: grid; grid-template-columns: minmax(0, 39fr) minmax(0, 61fr); grid-template-areas: "vehicle lines"; align-items: start; }
 .deck.flipped { grid-template-columns: minmax(0, 61fr) minmax(0, 39fr); grid-template-areas: "lines vehicle"; }
 .vehicle { grid-area: vehicle; min-width: 0; }
-.map { height: max(192px, var(--lines-height, 0px)); position: relative; }
+.map { height: max(224px, var(--lines-height, 0px)); position: relative; }
 .map svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .pump-truck { transform-origin: 0 50%; transform: scaleY(var(--truck-scale, 1)); }
 .flipped .map svg { transform: scaleX(-1); }
@@ -32,13 +32,15 @@ p { margin: 0; }
 .port[data-port^=right] { --port-y: calc(50% + 34px); }
 .pump { display: grid; gap: 2px; padding: 4px; font-size: 12px; }
 .pressure-readout { display: grid; gap: 2px; }
+#pump-heading, #total { font-size: clamp(14px, 2.3vw, 21px); }
+#total { color: #94ddff; font-weight: 700; }
 .pressure { color: #ffdb65; font-size: clamp(25px, 4vw, 44px); line-height: 1.05; white-space: nowrap; }
 #edit-water-settings {
   position: absolute;
   left: 39%;
-  top: calc(50% + 57px);
+  top: calc(50% + 68px);
   transform: translateX(-50%);
-  min-height: 36px;
+  min-height: 44px;
   padding-inline: 6px;
   font-size: 12px;
   white-space: nowrap;
@@ -51,8 +53,8 @@ p { margin: 0; }
 .line { grid-row: var(--slot); align-self: center; display: grid; grid-template-columns: minmax(74px, 1fr) minmax(0, 4fr); gap: 3px; padding: 3px; border-left: 3px solid #6bd4fa; border-radius: 7px; background: #172d46; }
 .flipped .line { border-left: 0; border-right: 3px solid #6bd4fa; }
 .line.paused { background: #463322; border-color: #ffc374; }
-.line button { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
-.line button small { display: block; color: #d3e3f3; }
+.line button { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.line button small { display: block; color: #d3e3f3; font-size: 12px; }
 .branches { display: grid; gap: 3px; }
 .branch { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px; }
 .branch.with-hose { grid-template-columns: minmax(62px, 1fr) minmax(0, 2.55fr) auto; }
@@ -84,7 +86,7 @@ p { margin: 0; }
   .port[data-port$=rear] { --port-x: 18%; }
   .port[data-port$=front] { --port-x: 56%; }
   .line { grid-template-columns: minmax(0, 1fr); }
-  .line button { padding-inline: 3px; }
+  .line button { padding-inline: 3px; font-size: 13px; }
   .branch.with-hose { grid-template-columns: minmax(48px, 1fr) minmax(0, 2fr) auto; }
   .pressure { font-size: clamp(21px, 6vw, 28px); }
 }
@@ -96,7 +98,6 @@ p { margin: 0; }
 @media (max-width: 440px) {
   .elevation-choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
-#total { font-size: clamp(14px, 2.2vw, 17px); color: #e1edf9; }
 .line button .pressure-basis { color: #ff939a; font-size: 12px; font-weight: 700; }
 
 .hose-controls, .hose-field {
@@ -127,13 +128,6 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
 }
 .line button .mixed-estimate {font-weight:700; overflow-wrap:normal}
 .line button .mixed-estimate.danger, .alarm.danger {color:#ff9b9b}
-#response-original, .response-options details {padding:8px 10px;border:1px solid #6885a3;border-radius:8px}
-#response-original.response-warning {background:#17283d;border-color:#9fb7d0;color:#fff}
-.response-options summary {cursor:pointer;font-weight:700;padding-block:4px}
-#response-diameters details {margin-top:5px}
-.response-options dl {display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin:8px 0}
-.response-options dd {margin:0;text-align:right}
-#respond {justify-self:start}
 @media (orientation: landscape) {
   .shell {height:100dvh}
   .deck {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
@@ -142,8 +136,19 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
 .lines {grid-template-rows:repeat(4,minmax(44px,auto))}
 .outlet-warning { display: block; }
 .low-output { color: #ffe08a; }
-.nozzle-ceiling, .long-hose-entry { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.nozzle-ceiling input, .long-hose-entry input { width: 8em; min-height: 40px; font: inherit; }
+.long-hose-entry { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.long-hose-entry input { width: 8em; min-height: 40px; font: inherit; }
 .long-hose-entry label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-#response-original { max-height: 30dvh; overflow: auto; }
-.response-options dl { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+
+#water-settings .editor { font-size: clamp(18px, 3vw, 24px); }
+#water-settings h2 { font-size: clamp(21px, 3.5vw, 28px); }
+#water-settings .options, #draft-fields, #hydrant-fields { display: grid; gap: 8px; }
+#water-settings label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+#water-settings select, #water-settings input {
+  max-width: 100%;
+  min-height: 44px;
+  font: inherit;
+  padding-inline: 6px;
+}
+#hydrant-flow { width: 9em; }
+#water-settings .hint { font-size: clamp(14px, 2.2vw, 18px); }

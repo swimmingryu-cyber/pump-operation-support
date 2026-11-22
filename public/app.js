@@ -133,12 +133,12 @@ function outletFlow(path, head) {
   return Math.sqrt(Math.max(0, head - path.elevation) / (path.nozzleCoefficient + path.hoseCoefficient));
 }
 
-function requiredPressure(lines, reference, adjustedId) {
+function requiredPressure(lines, reference) {
   const line = lines.find(item => item.outlets.some(path => path.id === reference.id));
   const selected = line.outlets.find(path => path.id === reference.id);
   const head = selected.elevation + (selected.nozzleCoefficient + selected.hoseCoefficient) * selected.target.q ** 2;
   const total = line.outlets.reduce((sum, path) =>
-    sum + (path.id === adjustedId ? path.target.q : outletFlow(path, head)), 0);
+    sum + outletFlow(path, head), 0);
   return head + line.fitting + line.loss * total ** 2;
 }
 
@@ -150,11 +150,8 @@ function pressureReference(lines, paths) {
     requiredPressure(lines, path) > requiredPressure(lines, best) ? path : best);
 }
 
-function solve(lines, reference, adjustedId = null) {
-  return atPressure(lines, requiredPressure(lines, reference, adjustedId), adjustedId);
-}
-
-function atPressure(lines, p, adjustedId = null) {
+function solve(lines, reference) {
+  const p = requiredPressure(lines, reference);
   const nozzles = [];
   const equipment = [];
   for (const line of lines) {
@@ -162,7 +159,7 @@ function atPressure(lines, p, adjustedId = null) {
     let upper = p - line.fitting;
     let lower = Math.min(upper, ...line.outlets.map(path => path.elevation));
     const sumAt = head => line.outlets.reduce((sum, path) =>
-      sum + (path.id === adjustedId ? path.target.q : outletFlow(path, head)), 0);
+      sum + outletFlow(path, head), 0);
     for (let i = 0; i < 48; i++) {
       const head = (lower + upper) / 2;
       if (head + line.loss * sumAt(head) ** 2 > p - line.fitting) upper = head;
@@ -171,29 +168,21 @@ function atPressure(lines, p, adjustedId = null) {
     const head = (lower + upper) / 2;
     const couplingPressures = [];
     for (const path of line.outlets) {
-      const available = outletFlow(path, head);
-      const q = path.id === adjustedId ? path.target.q : available;
+      const q = outletFlow(path, head);
       nozzles[path.id] = {
-        q, p: path.nozzleCoefficient * q ** 2, available,
+        q, p: path.nozzleCoefficient * q ** 2,
         force: path.reactionCoefficient === null ? null : path.reactionCoefficient * q ** 2
       };
       if (line.fork) {
         const end = nozzles[path.id].p;
-        const inlet = path.id === adjustedId
-          ? end + path.hoseCoefficient * q ** 2 + path.elevation
-          : head;
-        const maximum = Math.max(inlet, end);
+        const maximum = Math.max(head, end);
         equipment.push({ type: path.branch.diam, index: line.index, branchIndex: path.branchIndex,
           location: path.name + '側', pressure: maximum });
         couplingPressures.push(maximum);
       }
     }
     const mainEnd = line.fork ? head + line.fitting : nozzles[line.outlets[0].id].p;
-    const directThrottled = !line.fork && line.outlets[0].id === adjustedId;
-    const mainInlet = directThrottled
-      ? mainEnd + line.loss * nozzles[adjustedId].q ** 2 + line.outlets[0].elevation
-      : p;
-    const mainMaximum = Math.max(mainInlet, mainEnd);
+    const mainMaximum = Math.max(p, mainEnd);
     equipment.push({ type: line.diameter, index: line.index, branchIndex: null,
       location: line.name + '・主線', pressure: mainMaximum });
     if (line.fork) equipment.push({ type: 'fork', location: line.name + '・分岐', pressure: mainEnd });
@@ -212,10 +201,10 @@ function outletWarnings(nozzle) {
     danger.push('反動力注意 ' + Math.round(nozzle.force) + ' N（参考値200 N）');
   }
   if (nozzle.q === 0) low.push('放水見込みなし');
-  return { danger, low, hasWarning: Boolean(danger.length || low.length) };
+  return { danger, low };
 }
 
-function appendOutletWarnings(container, warnings, prefix = '') {
+function appendOutletWarnings(container, warnings) {
   const groups = [
     ['danger', '↑ ', warnings.danger],
     ['low-output', '↓ ', warnings.low]
@@ -224,7 +213,7 @@ function appendOutletWarnings(container, warnings, prefix = '') {
     if (!messages.length) continue;
     const status = document.createElement('span');
     status.className = 'outlet-warning ' + color;
-    status.textContent = prefix + direction + messages.join(' ／ ');
+    status.textContent = direction + messages.join(' ／ ');
     container.append(status);
   }
 }
@@ -302,114 +291,6 @@ function equipmentWarning(checks) {
   return '';
 }
 
-function responseSummary(container, solution, model) {
-  const rows = [['対策後の必要吐出圧（試算）', estimatedDischargeText(solution.p)], ['総送水量の目安', estimatedFlowText(solution.total)]];
-  const water = waterSupplyCheck(solution);
-  if (water) rows.push([water.label, water.summary, water.shortage]);
-  for (const path of model.paths) {
-    const nozzle = solution.nozzles[path.id];
-    const warnings = outletWarnings(nozzle);
-    rows.push([path.name, estimatedFlowText(nozzle.q) + ' ／ ' + estimatedPressureText(nozzle.p), false, warnings]);
-  }
-  for (const check of equipmentChecks(solution).filter(item => item.exceeded)) {
-    rows.push([check.label, check.value, true]);
-  }
-  const list = document.createElement('dl');
-  for (const [key, value, danger, warnings] of rows) {
-    const label = document.createElement('dt');
-    const result = document.createElement('dd');
-    label.textContent = key;
-    result.textContent = value;
-    if (danger) result.className = 'danger';
-    if (warnings) appendOutletWarnings(result, warnings);
-    list.append(label, result);
-  }
-  container.append(list);
-  if (pumpWarnings(solution)) container.append(text(pumpWarnings(solution)));
-}
-
-function openResponses(model) {
-  const { solution, reference, paths, lines } = model;
-  $('response-quadra-note').hidden = !paths.some(path => path.branch.nozzle === 'クアドラ');
-  $('response-quadra-note').textContent = quadraFlowNote;
-  const original = $('response-original');
-  const outletStatuses = paths.map(path => ({
-    name: path.name,
-    warnings: outletWarnings(solution.nozzles[path.id])
-  }));
-  const warnings = equipmentChecks(solution).filter(item => item.exceeded)
-    .map(item => item.label + ' ' + item.value);
-  if (pumpWarnings(solution)) warnings.unshift(pumpWarnings(solution));
-  const water = waterSupplyCheck(solution);
-  original.classList.toggle('response-warning', warnings.length > 0 || Boolean(water?.shortage)
-    || outletStatuses.some(status => status.warnings.hasWarning));
-  original.textContent = '現在の付設での試算 ' + estimatedDischargeText(solution.p)
-    + (water ? ' ／ ' + water.label + ' ' + water.summary : '')
-    + (warnings.length ? ' ／ ' + warnings.join(' ／ ') : '');
-  for (const status of outletStatuses) appendOutletWarnings(original, status.warnings, status.name + ' ');
-  const targets = $('response-target');
-  targets.replaceChildren(...paths.map(path => new Option(path.name, path.id)));
-  targets.value = (paths.find(path => outletWarnings(solution.nozzles[path.id]).hasWarning)
-    ?? reference).id;
-
-  function showOptions() {
-    const selected = paths[Number(targets.value)];
-    const alternatives = $('response-diameters');
-    alternatives.replaceChildren();
-    if (selected.branch.nozzle === 'ダブコン') {
-      const diameterBefore = Number(selected.branch.setting.split('/')[0]);
-      for (const diameter of nozzleDiameters.filter(value => value !== diameterBefore)) {
-        const proposed = qNozzle({ nozzle:'ダブコン', setting:diameter + '/' + selected.target.q });
-        const newOutlet = {
-          ...selected,
-          target: proposed,
-          nozzleCoefficient: proposed.p / proposed.q ** 2,
-          reactionCoefficient: proposed.force / proposed.q ** 2
-        };
-        const changedPaths = paths.map(path => path.id === selected.id ? newOutlet : path);
-        const changed = lines.map(line => ({...line, outlets:line.outlets.map(path => changedPaths[path.id])}));
-        const newReference = pressureReference(changed, changedPaths);
-        const solution = solve(changed, newReference);
-        const item = document.createElement('details');
-        const heading = document.createElement('summary');
-        const nozzle = solution.nozzles[selected.id];
-        const delta = roundEstimatedFlow(nozzle.q) - roundEstimatedFlow(selected.target.q);
-        heading.textContent = diameter + ' mm ／ ' + estimatedFlowText(nozzle.q)
-          + '（目標差 ' + (delta > 0 ? '+' : '') + delta + ' L/min）'
-          + (changedPaths.some(path => outletWarnings(solution.nozzles[path.id]).hasWarning)
-            || equipmentWarning(equipmentChecks(solution)) || waterSupplyCheck(solution)?.shortage
-            || pumpWarnings(solution) ? ' ／ 要確認' : '');
-        item.append(heading, text('対策後の圧力基準：' + newReference.name));
-        responseSummary(item, solution, { paths: changedPaths });
-        alternatives.append(item);
-      }
-    } else alternatives.textContent = '口径変更の試算はダブコンが対象です。';
-
-    const throttle = $('response-throttle');
-    throttle.replaceChildren();
-    const adjusted = selected.id !== reference.id
-      ? solve(lines, reference, selected.id) : null;
-    if (adjusted && adjusted.nozzles[selected.id].available > selected.target.q + 0.01) {
-      const line = lines.find(item => item.outlets.includes(selected));
-      throttle.append(text('調整対象：' + selected.name + (line.fork ? '側の分岐' : 'の放口')));
-      const shortfalls = paths.filter(path => path.target.q - adjusted.nozzles[path.id].q >= 0.5);
-      if (shortfalls.length) {
-        const warning = text('目標流量を維持できない筒先：' + shortfalls.map(path => path.name).join('、'));
-        warning.classList.add('low-output');
-        throttle.append(warning);
-      }
-      responseSummary(throttle, adjusted, model);
-      throttle.append(text('関係する筒先員と連携し、実測値を確認。総送水量は照合の目安です。'));
-    } else throttle.textContent = '基準筒先の目標を保ったまま、この筒先を絞って目標流量に合わせる案は成立しません。';
-  }
-  $('response-reference').textContent = '現行付設の圧力基準：' + reference.name;
-  targets.onchange = showOptions;
-  showOptions();
-  $('response').querySelectorAll('.response-options > details').forEach(panel => panel.open = false);
-  $('response').querySelectorAll('input[type=checkbox]').forEach(input => input.checked = false);
-  $('response').showModal();
-}
-
 function elevationLabel(value) {
   return (value > 0 ? '+' : value < 0 ? '−' : '') + Math.abs(value) + ' m';
 }
@@ -450,11 +331,6 @@ function toggleNozzle(branch) {
 function render() {
   const result = calculate();
   const solution = result.solution;
-  $('respond').hidden = !result.reference;
-  $('respond').onclick = result.reference ? () => openResponses(result) : null;
-  const quadraPriority = result.reference?.branch.nozzle === 'クアドラ';
-  $('pump-heading').textContent = quadraPriority
-    ? '必要吐出圧力（クアドラ基準・推定）' : '必要吐出圧力（推定）';
   $('deck').classList.toggle('flipped', Boolean(data.flipped));
   $('flip').setAttribute('aria-pressed', String(Boolean(data.flipped)));
   const equipment = solution ? equipmentChecks(solution) : [];
@@ -574,9 +450,9 @@ function render() {
     : configured ? '全線停止中：必要圧力は算出しません' : '';
 }
 function updateLayout() {
-  const height = Math.max(192, $('lines').offsetHeight);
-  $('map').style.setProperty('--lines-height', height + 'px');
-  $('map').style.setProperty('--truck-scale', String(176 / height));
+  const map = $('map');
+  map.style.setProperty('--lines-height', $('lines').offsetHeight + 'px');
+  map.style.setProperty('--truck-scale', String(176 / map.offsetHeight));
   alignHoses();
 }
 function closeOverlay() { $('overlay').close(); }
@@ -800,7 +676,6 @@ else {
     text(quadraFlowNote));
 }
 }
-$('response-close').onclick = () => $('response').close();
 const waterDialog = $('water-settings');
 const waterSourceInput = $('water-source');
 const suctionInput = $('suction-height');
