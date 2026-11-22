@@ -427,8 +427,47 @@ function updateLayout() {
   alignHoses();
 }
 function closeOverlay() { $('overlay').close(); }
+function showPreviousLayout(line, index) {
+  const panel = $('previous-layout');
+  panel.hidden = !line.active;
+  const nozzles = $('previous-nozzles');
+  nozzles.replaceChildren();
+  if (panel.hidden) return;
+
+  const hose = (part) => part.diam + ' mm × ' + (part.count ?? '—') + '本';
+  $('previous-main').textContent = ports[index].label + ' ／ ' + (line.fork ? '分岐前 ' : '')
+    + hose(line) + ' ／ ' + (line.fork ? '分岐あり' : '直結');
+  const branches = line.fork ? line.branches : line.branches.slice(0, 1);
+  branches.forEach((branch, branchIndex) => {
+    const item = document.createElement('li');
+    const name = document.createElement('strong');
+    name.textContent = line.fork ? (branchIndex === 0 ? '筒先 A' : '筒先 B') : '筒先';
+    item.append(name);
+    if (!branch.active) {
+      item.append(' ／ 未設定');
+      nozzles.append(item);
+      return;
+    }
+
+    const details = [];
+    if (line.fork) details.push(hose(branch));
+    if (branch.setting) {
+      const [range, value] = branch.setting.split('/');
+      details.push(branch.nozzle === 'ダブコン'
+        ? 'ダブコン ' + range + ' mm・目標 ' + value + ' L/min'
+        : 'クアドラ ' + range + ' L/minレンジ・目標 ' + value + ' MPa');
+    } else details.push('筒先設定なし');
+    details.push('高低差 ' + elevationLabel(branch.elevation ?? 0));
+    if (branch.maxPressure) details.push('圧力上限 ' + pressureText(branch.maxPressure));
+    if (branch.stopped) details.push('停止中');
+    item.append(' ／ ' + details.join(' ／ '));
+    nozzles.append(item);
+  });
+}
+
 function startEdit(index, branchIndex = null) {
   const line = data.lines[index];
+  showPreviousLayout(line, index);
   ctx = { i: index, j: branchIndex, draft: structuredClone(line) };
   step = branchIndex === null ? 0 : line.fork ? 2 : 3;
   $('delete').hidden = !line.active || branchIndex !== null;

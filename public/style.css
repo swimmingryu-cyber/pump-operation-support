@@ -140,3 +140,32 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
 .long-hose-entry label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #response-original { max-height: 30dvh; overflow: auto; }
 .response-options dl { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+
+.previous-layout {
+  max-height: 30dvh;
+  overflow: auto;
+  flex-shrink: 0;
+  padding: 4px 6px;
+  border: 1px solid #46617d;
+  border-radius: 7px;
+  background: #172d46;
+  color: #d3e3f3;
+  font-size: 12px;
+}
+.previous-layout h3 { margin: 0 0 3px; font-size: inherit; }
+.previous-layout-map {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  align-items: center;
+  gap: 4px;
+}
+.previous-main, .previous-nozzles li {
+  padding: 2px 5px;
+  border-left: 2px solid #6bd4fa;
+  background: #203a55;
+  overflow-wrap: anywhere;
+}
+.previous-nozzles { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+@media (max-width: 400px) {
+  .previous-layout-map { grid-template-columns: 1fr; }
+}
