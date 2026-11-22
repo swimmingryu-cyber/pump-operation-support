@@ -8,7 +8,7 @@ button[aria-pressed=true], select.selected, input.selected { background: #285977
 .shell { min-height: 100dvh; display: flex; flex-direction: column; gap: 6px; padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); }
 .top, .editor header, .editor footer { display: flex; align-items: center; gap: 6px; }
 .top { flex-wrap: wrap; }
-.top strong { font-size: clamp(14px, 2.4vw, 22px); margin-right: auto; }
+.top strong { font-size: clamp(14px, 2.4vw, 22px); }
 .top small, .hint { font-size: 11px; color: #c7daee; }
 .top button { font-size: 12px; }
 #reset { margin-right: 12px; }
@@ -182,8 +182,10 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
   .flash-over, .flash-under { animation: none; }
 }
 
-.app-footer { display: flex; justify-content: flex-end; padding-block: 8px; }
-.app-footer button { font-size: 12px; min-height: 44px; }
+.app-title { display: flex; align-items: center; gap: 6px; margin-right: auto; }
+#edit-preferences { min-height: 44px; padding-inline: 6px; white-space: nowrap; }
+.choices .high-reaction { color: #ffdbe0; background: #682635; border-color: #ff818f; }
+.choices .high-reaction[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #ffdbe0; }
 #preferences fieldset { display: grid; gap: 8px; margin: 0; min-width: 0; }
 #preferences label { display: grid; grid-template-columns: 1fr minmax(5rem, 9rem); gap: 8px; align-items: center; }
 #preferences input, #preferences select { min-width: 0; min-height: 44px; font: inherit; }

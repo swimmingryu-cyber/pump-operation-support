@@ -110,16 +110,30 @@ function save() {
   try { localStorage.setItem(storageKey, JSON.stringify(data)); } catch {}
   render();
 }
-function qNozzle(b){if(!b.nozzle||!b.setting)return null;if(b.nozzle==='ダブコン'){
- const [d,q]=b.setting.split('/').map(Number);if(!(d>0&&q>0))return null;
- const area=Math.PI*(d/1000)**2/4, v=(q/60000)/(0.95*area),p=1000*v*v/2/1e6;
- return {q,p,force:(q/60000)*1000*v};
-}const [rated,press]=b.setting.split('/').map(Number);if(!(rated>0&&press>0))return null;
- const q=rated*Math.sqrt(press/quadraFlowReferencePressure);return {q,p:press,force:null};}
+function smoothNozzle(diameter, value, mode = 'flow') {
+  if (!(diameter > 0 && value > 0)) return null;
+  const area = Math.PI * (diameter / 1000) ** 2 / 4;
+  const effectiveArea = 0.95 * area;
+  const velocity = mode === 'pressure' ? Math.sqrt(2 * value * 1000) : value / (60000 * effectiveArea);
+  const flow = mode === 'pressure' ? velocity * effectiveArea * 60000 : value;
+  const pressure = mode === 'pressure' ? value : velocity ** 2 / 2000;
+  return { q: flow, p: pressure, force: flow / 60000 * 1000 * velocity };
+}
+
+function qNozzle(branch) {
+  if (!branch.nozzle || !branch.setting) return null;
+  const [size, value] = branch.setting.split('/').map(Number);
+  if (branch.nozzle === 'ダブコン') return smoothNozzle(size, value, branch.smoothMode);
+  if (!(size > 0 && value > 0)) return null;
+  return { q: size * Math.sqrt(value / quadraFlowReferencePressure), p: value, force: null };
+}
 function hoseLoss(d,n,q){if(!(d>0&&n>=0&&q>=0))return 0;const area=Math.PI*(d/1000)**2/4,v=q/60000/area;return 0.025*(n*20)/(d/1000)*1000*v*v/2/1e6}
 
 const nozzleDiameters = [10, 13, 15, 19, 23, 26];
 const reactionReference = 200;
+const smoothTwoPersonReactionReference = 300;
+const smoothPressures = Array.from({ length: 11 }, (_, index) => (20 + 5 * index) / 100);
+const smoothFlowCandidates = Array.from({ length: 21 }, (_, index) => 100 + 50 * index);
 const lowFlowFraction = 0.8;
 const pressureText = p => p.toFixed(3) + ' MPa';
 const flowText = q => Math.round(q) + ' L/min';
@@ -131,11 +145,11 @@ function nozzleName(index, branchIndex, fork) {
   return ports[index].label + '・筒先' + (fork ? (branchIndex ? ' B' : ' A') : '');
 }
 
-function calculate() {
+function calculate(configuredLines = data.lines) {
   const paths = [];
   const lines = [];
   let missing = false;
-  data.lines.forEach((line, index) => {
+  configuredLines.forEach((line, index) => {
     if (!line.active) return;
     const outlets = [];
     const branches = line.fork ? line.branches : line.branches.slice(0, 1);
@@ -167,6 +181,25 @@ function calculate() {
 
   const reference = pressureReference(lines, paths);
   return { ok: true, paths, lines, reference };
+}
+
+function isSmoothFlowCandidate(draft, lineIndex, branchIndex, diameter, flow) {
+  const nozzle = smoothNozzle(diameter, flow);
+  if (!nozzle || nozzle.p > smoothPressures.at(-1)) return false;
+
+  const lines = ports.map(emptyLine);
+  lines[lineIndex] = {
+    ...draft,
+    active: true,
+    branches: draft.branches.map((branch, index) => index === branchIndex
+      ? { ...branch, active: true, stopped: false, nozzle: 'ダブコン', smoothMode: 'flow', setting: diameter + '/' + flow }
+      : branch)
+  };
+  const setup = calculate(lines);
+  if (!setup.ok) return false;
+  const outlet = setup.paths.find(path => path.branchIndex === branchIndex);
+  const pressure = Math.max(0, requiredPressure(setup.lines, outlet));
+  return !equipmentChecks(solve(setup.lines, pressure)).some(check => check.exceeded);
 }
 
 function outletFlow(path, head) {
@@ -430,7 +463,8 @@ function render() {
         const [size, target] = (branch.setting ?? '').split('/');
         details.textContent = !branch.setting ? '筒先設定なし' : branch.nozzle === 'クアドラ'
           ? 'クアドラ ' + nozzleFlowText(Number(size)) + 'レンジ・' + Number(target).toFixed(2) + ' MPa'
-          : 'ダブコン ' + size + ' mm・' + nozzleFlowText(Number(target));
+          : 'ダブコン ' + size + ' mm・' + (branch.smoothMode === 'pressure'
+            ? Number(target).toFixed(2) + ' MPa' : nozzleFlowText(Number(target)));
         edit.append(details);
         if (branch.elevation) {
           const elevation = document.createElement('small');
@@ -455,7 +489,7 @@ function render() {
         estimate.className = 'mixed-estimate';
         if (warnings.danger.length && !warnings.low.length) estimate.classList.add('danger');
         if (warnings.low.length && !warnings.danger.length) estimate.classList.add('low-output');
-        estimate.textContent = '推定 ' + nozzleFlowText(roundEstimatedFlow(nozzle.q)) + ' ／ ' + estimatedPressureText(nozzle.p);
+        estimate.textContent = '推定 ' + nozzleFlowText(roundEstimatedFlow(nozzle.q)) + ' ／ ' + nozzle.p.toFixed(2) + ' MPa';
         edit.append(estimate);
         const warning = document.createElement('small');
         warning.className = 'mixed-estimate';
@@ -690,7 +724,11 @@ function draw() {
     const nozzles = grid(2);
     for (const nozzle of ['ダブコン', 'クアドラ']) {
       nozzles.append(choice(nozzle, () => {
-        if (b.nozzle !== nozzle) b.setting = null;
+        if (b.nozzle !== nozzle) {
+          b.setting = null;
+          delete b.smoothMode;
+        }
+        ctx.smoothMode = b.smoothMode ?? 'flow';
         b.nozzle = nozzle;
         const [size] = (b.setting ?? '').split('/');
         partialDiameter = size && nozzle === 'ダブコン' ? Number(size) : null;
@@ -709,17 +747,39 @@ if (b.nozzle === 'ダブコン') {
     diameters.append(choice(String(diameter), () => { partialDiameter = diameter; draw(); },
       partialDiameter === diameter));
   }
-  const flows = grid(5);
-  for (const flow of [300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]) {
-    const button = choice(nozzleFlowValue(flow), () => {
-      b.setting = partialDiameter + '/' + flow;
+  const pressureMode = ctx.smoothMode === 'pressure';
+  const modeButton = control(pressureMode ? 'ノズル圧力（MPa）' : '流量（' + preferences.nozzleFlowUnit + '）', () => {
+    ctx.smoothMode = pressureMode ? 'flow' : 'pressure';
+    draw();
+    $('smooth-mode').focus();
+  }, pressureMode ? 'ノズル圧力から流量に切り替え' : '流量からノズル圧力に切り替え');
+  modeButton.id = 'smooth-mode';
+  const values = grid(5);
+  const candidates = pressureMode ? smoothPressures : smoothFlowCandidates.filter(flow =>
+    isSmoothFlowCandidate(ctx.draft, ctx.i, ctx.j ?? 0, partialDiameter, flow));
+  for (const value of candidates) {
+    const nozzle = smoothNozzle(partialDiameter, value, ctx.smoothMode);
+    const selected = partialDiameter === Number(b.setting?.split('/')[0])
+      && ctx.smoothMode === (b.smoothMode ?? 'flow') && savedValue === value;
+    const button = choice(pressureMode ? value.toFixed(2) : nozzleFlowValue(value), () => {
+      b.setting = partialDiameter + '/' + value;
+      b.smoothMode = ctx.smoothMode;
       finish();
-    }, flow === savedValue, flow > 400 ? 'caution' : '');
+    }, selected, !pressureMode && nozzle?.force > smoothTwoPersonReactionReference
+      ? 'high-reaction' : nozzle?.force >= reactionReference ? 'caution' : '');
+    if (button.classList.contains('high-reaction')) {
+      button.setAttribute('aria-label', nozzleFlowText(value) + '、反動力注意');
+    }
     button.disabled = partialDiameter === null;
-    flows.append(button);
+    values.append(button);
   }
-  o.append(text('口径（mm）'), diameters, text('流量（' + preferences.nozzleFlowUnit + '）／' + nozzleFlowValue(400) + 'を超えると注意。保持限界は流量だけでは決められません。'),
-    flows, text(partialDiameter === null ? '先に口径を選択してください' : '流量を選ぶと設定を保存します。反動力は概算で別途警告します。'));
+  o.append(text('口径（mm）'), diameters, modeButton, values);
+  if (partialDiameter === null) o.append(text('先に口径を選択してください'));
+  else if (!pressureMode && !candidates.length) {
+    o.append(text('この口径・付設条件で表示できる流量候補がありません。'));
+  } else if (!pressureMode) {
+    o.append(text('赤：推定反動力が2人保持の参考値（300 N）を超過'));
+  }
 }
 else {
   const ranges = grid(4);
