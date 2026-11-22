@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0d1929">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>消防ポンプ運用支援 v0.9.20</title>
+  <title>ポンプ運用シミュレーター v0.9.22</title>
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./style.css?v=0920">
+  <link rel="stylesheet" href="./style.css?v=0922">
 </head>
 <body>
   <main class="shell" id="main">
     <header class="top">
-      <strong>消防ポンプ運用支援 <small>v0.9.20</small></strong>
+      <strong>ポンプ運用シミュレーター <small>v0.9.22</small></strong>
       <button id="reset" type="button">初期化</button>
       <button id="flip" type="button" aria-pressed="false">⇄ 左右反転</button>
     </header>
@@ -44,7 +44,7 @@
           <button id="edit-water-settings" type="button">水利設定</button>
         </div>
         <div class="pump">
-          <div class="pressure-readout"><span id="pump-heading">必要送水圧力</span><strong class="pressure">— MPa</strong></div>
+          <div class="pressure-readout"><button id="throttle" type="button">スロットル調整</button><span id="pump-heading">必要送水圧力</span><strong class="pressure">0.0 MPa</strong></div>
           <div id="total" hidden>
             <span id="total-heading">推定総送水量</span>
             <strong id="total-value"></strong>
@@ -56,6 +56,7 @@
       </section>
       <section class="lines" id="lines" aria-label="設定済みホースライン"></section>
     </div>
+    <footer class="app-footer"><button id="edit-preferences" type="button">設定変更</button></footer>
   </main>
   <dialog class="overlay" id="overlay" aria-labelledby="title">
     <div class="editor">
@@ -89,6 +90,30 @@
       <footer><button type="submit">保存</button></footer>
     </form>
   </dialog>
-  <script src="./app.js?v=0920"></script>
+  <dialog class="overlay" id="preferences" aria-labelledby="preferences-title">
+    <form class="editor" id="preferences-form">
+      <header><h2 id="preferences-title">設定変更</h2><button id="close-preferences" type="button">閉じる</button></header>
+      <div class="options">
+        <label>筒先設定の流量単位
+          <select id="nozzle-flow-unit">
+            <option value="L/min">L/min</option>
+            <option value="L/s">L/s</option>
+            <option value="m³/min">m³/min</option>
+          </select>
+        </label>
+        <fieldset>
+          <legend>器具の圧力警告値（MPa）</legend>
+          <label>50 mmホース <input id="limit-50" type="number" inputmode="decimal" step="any" required></label>
+          <label>65 mmホース <input id="limit-65" type="number" inputmode="decimal" step="any" required></label>
+          <label>分岐金具 <input id="limit-fork" type="number" inputmode="decimal" step="any" required></label>
+          <label>結合金具 <input id="limit-coupling" type="number" inputmode="decimal" step="any" required></label>
+          <p class="hint">使用する器具の仕様を確認して入力してください。</p>
+        </fieldset>
+        <p id="preferences-status" class="hint" role="status"></p>
+      </div>
+      <footer><button id="reset-preferences" type="button">設定初期化</button><button type="submit">保存</button></footer>
+    </form>
+  </dialog>
+  <script src="./app.js?v=0922"></script>
 </body>
 </html>

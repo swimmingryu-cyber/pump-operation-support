@@ -15,10 +15,48 @@ const equipmentTypes = {
 };
 // Developer-maintained reference working pressures, not rupture or proof-test pressures.
 const hosePressureReference = 1.3;
-const equipmentPressureReferences = {
+const defaultEquipmentLimits = {
   50: hosePressureReference, 65: hosePressureReference,
   fork: hosePressureReference, coupling: 1.3
 };
+const preferencesKey = 'pump-operation-preferences';
+const nozzleFlowUnits = {
+  'L/min': { divisor: 1, digits: 0 },
+  'L/s': { divisor: 60, digits: 2 },
+  'm³/min': { divisor: 1000, digits: 3 }
+};
+
+function readPreferences() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(preferencesKey)); } catch {}
+  const equipmentLimits = { ...defaultEquipmentLimits };
+  for (const key of Object.keys(equipmentLimits)) {
+    const limit = saved?.equipmentLimits?.[key];
+    if (Number.isFinite(limit) && limit > 0) equipmentLimits[key] = limit;
+  }
+  return {
+    equipmentLimits,
+    nozzleFlowUnit: Object.hasOwn(nozzleFlowUnits, saved?.nozzleFlowUnit)
+      ? saved.nozzleFlowUnit : 'L/min'
+  };
+}
+
+let preferences = readPreferences();
+function persistPreferences() {
+  try {
+    localStorage.setItem(preferencesKey, JSON.stringify(preferences));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function nozzleFlowValue(flow) {
+  const { divisor, digits } = nozzleFlowUnits[preferences.nozzleFlowUnit];
+  return String(Number((flow / divisor).toFixed(digits)));
+}
+const nozzleFlowText = flow => nozzleFlowValue(flow) + ' ' + preferences.nozzleFlowUnit;
+
 const quadraRanges = [110, 230, 360, 470];
 // NH-50QF nominal dial flow is specified at 0.70 MPa. Other pressures remain estimates.
 const quadraFlowReferencePressure = 0.7;
@@ -65,6 +103,7 @@ function load() {
 }
 
 const data = load();
+let adjustedPressure = 0;
 let ctx = null, step = 0, partialDiameter = null, partialFlow = null;
 const $ = id => document.getElementById(id);
 function save() {
@@ -81,6 +120,7 @@ function hoseLoss(d,n,q){if(!(d>0&&n>=0&&q>=0))return 0;const area=Math.PI*(d/10
 
 const nozzleDiameters = [10, 13, 15, 19, 23, 26];
 const reactionReference = 200;
+const lowFlowFraction = 0.8;
 const pressureText = p => p.toFixed(3) + ' MPa';
 const flowText = q => Math.round(q) + ' L/min';
 const estimatedPressureText = p => p.toFixed(1) + ' MPa';
@@ -123,10 +163,10 @@ function calculate() {
       fork: line.fork, index, name: ports[index].label, diameter: line.diam
     });
   });
-  if (missing || !paths.length) return { ok: !missing, paths: [], solution: null };
+  if (missing || !paths.length) return { ok: !missing, paths: [] };
 
   const reference = pressureReference(lines, paths);
-  return { ok: true, paths, lines, reference, solution: solve(lines, reference) };
+  return { ok: true, paths, lines, reference };
 }
 
 function outletFlow(path, head) {
@@ -150,10 +190,17 @@ function pressureReference(lines, paths) {
     requiredPressure(lines, path) > requiredPressure(lines, best) ? path : best);
 }
 
-function solve(lines, reference) {
-  const p = requiredPressure(lines, reference);
+function solve(lines, p) {
   const nozzles = [];
   const equipment = [];
+  if (p === 0) {
+    for (const line of lines) {
+      for (const path of line.outlets) {
+        nozzles[path.id] = { q: 0, p: 0, force: path.reactionCoefficient === null ? null : 0 };
+      }
+    }
+    return { p, nozzles, equipment, total: 0 };
+  }
   for (const line of lines) {
     // At a common supply pressure, the flow through the main hose is the sum of its branches.
     let upper = p - line.fitting;
@@ -185,22 +232,23 @@ function solve(lines, reference) {
     const mainMaximum = Math.max(p, mainEnd);
     equipment.push({ type: line.diameter, index: line.index, branchIndex: null,
       location: line.name + '・主線', pressure: mainMaximum });
-    if (line.fork) equipment.push({ type: 'fork', location: line.name + '・分岐', pressure: mainEnd });
+    if (line.fork) equipment.push({ type: 'fork', index: line.index, branchIndex: null, location: line.name + '・分岐', pressure: mainEnd });
     equipment.push({
-      type: 'coupling', location: line.name + '・ライン全体',
+      type: 'coupling', index: line.index, branchIndex: null, location: line.name + '・ライン全体',
       pressure: Math.max(mainMaximum, ...couplingPressures)
     });
   }
   return { p, nozzles, equipment, total: nozzles.reduce((sum, nozzle) => sum + nozzle.q, 0) };
 }
 
-function outletWarnings(nozzle) {
+function outletWarnings(nozzle, target) {
   const danger = [];
   const low = [];
   if (nozzle.force !== null && nozzle.force >= reactionReference) {
     danger.push('反動力注意 ' + Math.round(nozzle.force) + ' N（参考値200 N）');
   }
   if (nozzle.q === 0) low.push('放水見込みなし');
+  else if (nozzle.q < target.q * lowFlowFraction) low.push('設定流量の80％未満');
   return { danger, low };
 }
 
@@ -266,7 +314,7 @@ function pumpWarnings(result) {
 
 function equipmentChecks(result) {
   return result.equipment.map(({ type, index, branchIndex, location, pressure }) => {
-    const limit = equipmentPressureReferences[type];
+    const limit = preferences.equipmentLimits[type];
     const exceeded = Number.isFinite(limit) && pressure > limit + 1e-9;
     const label = (equipmentTypes[type] ?? type + ' mmホース') + '（' + location + '）';
     const value = estimatedPressureText(pressure)
@@ -277,14 +325,14 @@ function equipmentChecks(result) {
 }
 
 function showHoseWarning(button, checks, index, branchIndex) {
-  if (!checks.some(check => check.exceeded && check.index === index && check.branchIndex === branchIndex)) return;
-  button.classList.add('hose-pressure-warning');
+  const exceeded = checks.filter(check =>
+    check.exceeded && check.index === index && check.branchIndex === branchIndex);
+  if (!exceeded.length) return;
+  button.classList.add('hose-pressure-warning', 'flash-over');
   const label = document.createElement('small');
-  label.textContent = 'ホース耐圧超過危険';
+  label.textContent = exceeded.map(check => check.label + 'の警告参考値超過').join(' ／ ');
   button.append(label);
 }
-
-const estimatedDischargeText = p => p > 0 ? estimatedPressureText(p) : '要実測';
 
 function equipmentWarning(checks) {
   if (checks.some(check => check.exceeded)) return '機材の警告参考値を超過';
@@ -330,7 +378,9 @@ function toggleNozzle(branch) {
 
 function render() {
   const result = calculate();
-  const solution = result.solution;
+  const solution = result.paths.length ? solve(result.lines, adjustedPressure) : null;
+  let hasLowOutput = false;
+  let hasHighReaction = false;
   $('deck').classList.toggle('flipped', Boolean(data.flipped));
   $('flip').setAttribute('aria-pressed', String(Boolean(data.flipped)));
   const equipment = solution ? equipmentChecks(solution) : [];
@@ -379,8 +429,8 @@ function render() {
         const details = document.createElement('small');
         const [size, target] = (branch.setting ?? '').split('/');
         details.textContent = !branch.setting ? '筒先設定なし' : branch.nozzle === 'クアドラ'
-          ? 'クアドラ ' + size + 'レンジ・' + Number(target).toFixed(2) + ' MPa'
-          : 'ダブコン ' + size + ' mm・' + target + ' L/min';
+          ? 'クアドラ ' + nozzleFlowText(Number(size)) + 'レンジ・' + Number(target).toFixed(2) + ' MPa'
+          : 'ダブコン ' + size + ' mm・' + nozzleFlowText(Number(target));
         edit.append(details);
         if (branch.elevation) {
           const elevation = document.createElement('small');
@@ -392,18 +442,27 @@ function render() {
       const path = result.paths.find(item => item.index === index && item.branchIndex === branchIndex);
       if (path) {
         const nozzle = solution.nozzles[path.id];
-        const warnings = outletWarnings(nozzle);
+        const warnings = outletWarnings(nozzle, path.target);
+        if (warnings.danger.length) {
+          hasHighReaction = true;
+          edit.classList.add('flash-over');
+        }
+        if (warnings.low.length) {
+          hasLowOutput = true;
+          edit.classList.add('flash-under');
+        }
         const estimate = document.createElement('small');
         estimate.className = 'mixed-estimate';
         if (warnings.danger.length && !warnings.low.length) estimate.classList.add('danger');
         if (warnings.low.length && !warnings.danger.length) estimate.classList.add('low-output');
-        estimate.textContent = '推定 ' + estimatedFlowText(nozzle.q) + ' ／ ' + estimatedPressureText(nozzle.p);
+        estimate.textContent = '推定 ' + nozzleFlowText(roundEstimatedFlow(nozzle.q)) + ' ／ ' + estimatedPressureText(nozzle.p);
         edit.append(estimate);
         const warning = document.createElement('small');
         warning.className = 'mixed-estimate';
         appendOutletWarnings(warning, warnings);
         if (warning.childElementCount) edit.append(warning);
-        if (path.id === result.reference.id) {
+        if (path.id === result.reference.id && adjustedPressure > 0 &&
+            adjustedPressure === requiredPressure(result.lines, result.reference)) {
           const basis = document.createElement('small');
           basis.className = 'pressure-basis';
           basis.textContent = '◆圧力基準';
@@ -433,9 +492,9 @@ function render() {
   updateLayout();
   const pr = document.querySelector('.pressure');
   const configured = data.lines.some(line => line.active);
-  pr.textContent = solution ? estimatedDischargeText(solution.p)
-    : configured && result.ok ? '放水停止' : '— MPa';
-  pr.classList.toggle('danger', !!solution && (solution.p <= 0 || solution.p > 1.4));
+  pr.textContent = estimatedPressureText(adjustedPressure);
+  pr.classList.toggle('danger', adjustedPressure > 1.4);
+  $('throttle').disabled = !result.ok;
   $('total').hidden = !solution;
   $('total-value').textContent = solution ? estimatedFlowText(solution.total) : '';
   $('total-status').hidden = result.ok;
@@ -446,10 +505,15 @@ function render() {
   const gearWarning = equipmentWarning(equipment);
   const alert = $('alert');
   alert.classList.toggle('danger', Boolean(gearWarning));
-  const warnings = solution ? [pumpWarnings(solution), gearWarning].filter(Boolean) : [];
+  const warnings = solution ? [adjustedPressure > 0 ? pumpWarnings(solution) : '', gearWarning].filter(Boolean) : [];
+  const hasOver = Boolean(gearWarning) || hasHighReaction || adjustedPressure > 1.4;
+  $('throttle').classList.toggle('flash-over', hasOver);
+  $('throttle').classList.toggle('flash-under', hasLowOutput);
+  $('throttle').setAttribute('aria-label', ['スロットル調整',
+    hasOver ? '超過警告あり' : '', hasLowOutput ? '圧力不足あり' : ''].filter(Boolean).join('、'));
   alert.textContent = solution ? warnings.join(' ／ ')
     : !result.ok ? '未入力の筒先・ホースがあります'
-    : configured ? '全線停止中：必要圧力は算出しません' : '';
+    : configured ? '全線停止中' : '';
 }
 function updateLayout() {
   const map = $('map');
@@ -647,20 +711,20 @@ if (b.nozzle === 'ダブコン') {
   }
   const flows = grid(5);
   for (const flow of [300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]) {
-    const button = choice(String(flow), () => {
+    const button = choice(nozzleFlowValue(flow), () => {
       b.setting = partialDiameter + '/' + flow;
       finish();
     }, flow === savedValue, flow > 400 ? 'caution' : '');
     button.disabled = partialDiameter === null;
     flows.append(button);
   }
-  o.append(text('口径（mm）'), diameters, text('流量（L/min）／400を超えると注意。保持限界は流量だけでは決められません。'),
+  o.append(text('口径（mm）'), diameters, text('流量（' + preferences.nozzleFlowUnit + '）／' + nozzleFlowValue(400) + 'を超えると注意。保持限界は流量だけでは決められません。'),
     flows, text(partialDiameter === null ? '先に口径を選択してください' : '流量を選ぶと設定を保存します。反動力は概算で別途警告します。'));
 }
 else {
   const ranges = grid(4);
   for (const range of quadraRanges) {
-    ranges.append(choice(String(range), () => { partialFlow = range; draw(); },
+    ranges.append(choice(nozzleFlowValue(range), () => { partialFlow = range; draw(); },
       partialFlow === range));
   }
   const pressures = [...new Set([0.5, 0.6, 0.7, savedValue].filter(Number.isFinite))].sort((a, b) => a - b);
@@ -674,10 +738,51 @@ else {
     button.disabled = partialFlow === null;
     targets.append(button);
   }
-  o.append(text('噴霧の流量レンジ（L/min）'), ranges, text('目標ノズル圧力（MPa）'), targets,
+  o.append(text('噴霧の流量レンジ（' + preferences.nozzleFlowUnit + '）'), ranges, text('目標ノズル圧力（MPa）'), targets,
     text(quadraFlowNote));
 }
 }
+const preferencesDialog = $('preferences');
+const preferencesForm = $('preferences-form');
+const preferencesStatus = $('preferences-status');
+const limitInputs = Object.keys(defaultEquipmentLimits).map(key => [key, $('limit-' + key)]);
+
+function fillPreferencesForm(settings) {
+  $('nozzle-flow-unit').value = settings.nozzleFlowUnit;
+  for (const [key, input] of limitInputs) input.value = settings.equipmentLimits[key];
+}
+
+$('edit-preferences').onclick = () => {
+  fillPreferencesForm(preferences);
+  preferencesStatus.textContent = '';
+  preferencesDialog.showModal();
+};
+$('close-preferences').onclick = () => preferencesDialog.close();
+$('reset-preferences').onclick = () => {
+  if (!confirm('流量単位と器具の圧力警告値を初期値に戻しますか？')) return;
+  preferences = { equipmentLimits: { ...defaultEquipmentLimits }, nozzleFlowUnit: 'L/min' };
+  fillPreferencesForm(preferences);
+  preferencesStatus.textContent = persistPreferences()
+    ? '設定を初期化しました' : 'この画面では初期化しました。端末への保存ができませんでした。';
+  render();
+};
+preferencesForm.onsubmit = event => {
+  event.preventDefault();
+  if (!preferencesForm.reportValidity()) return;
+  const unit = $('nozzle-flow-unit').value;
+  const equipmentLimits = Object.fromEntries(limitInputs.map(([key, input]) => [key, input.valueAsNumber]));
+  if (!Object.hasOwn(nozzleFlowUnits, unit) ||
+      Object.values(equipmentLimits).some(limit => !Number.isFinite(limit) || limit <= 0)) {
+    preferencesStatus.textContent = '圧力警告値には0より大きい数値を入力してください。';
+    return;
+  }
+  preferences = { equipmentLimits, nozzleFlowUnit: unit };
+  const persisted = persistPreferences();
+  render();
+  if (persisted) preferencesDialog.close();
+  else preferencesStatus.textContent = 'この画面に反映しました。端末への保存ができませんでした。';
+};
+
 const waterDialog = $('water-settings');
 const waterSourceInput = $('water-source');
 const suctionInput = $('suction-height');
@@ -723,6 +828,12 @@ save();
 document.querySelectorAll('[data-port]').forEach(button => {
   button.onclick = () => startEdit(ports.findIndex(port => port.key === button.dataset.port));
 });
+$('throttle').onclick = () => {
+  const result = calculate();
+  if (!result.ok) return;
+  adjustedPressure = result.reference ? Math.max(0, requiredPressure(result.lines, result.reference)) : 0;
+  render();
+};
 $('flip').onclick = () => { data.flipped = !data.flipped; save(); };
 $('close').onclick = closeOverlay;
 $('back').onclick = back;
@@ -741,6 +852,7 @@ $('overlay').addEventListener('close', () => {
 });
 $('reset').onclick = () => {
   if (!confirm('すべての設定を初期化しますか？')) return;
+  adjustedPressure = 0;
   delete data.quadraFogLimit;
   delete data.waterSource;
   delete data.suctionHeight;
