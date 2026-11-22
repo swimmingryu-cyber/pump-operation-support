@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0d1929">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>消防ポンプ運用支援 v0.9.8</title>
+  <title>消防ポンプ運用支援 v0.9.9</title>
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./style.css?v=098">
+  <link rel="stylesheet" href="./style.css?v=099">
 </head>
 <body>
   <main class="shell" id="main">
     <header class="top">
-      <strong>消防ポンプ運用支援 <small>v0.9.8</small></strong>
+      <strong>消防ポンプ運用支援 <small>v0.9.9</small></strong>
       <button id="flip" type="button" aria-pressed="false">⇄ 左右反転</button>
     </header>
     <div class="deck" id="deck">
@@ -44,6 +44,7 @@
         <div class="pump">
           <div><span id="pump-heading">概算必要吐出圧力</span> <strong class="pressure">— MPa</strong></div>
           <div id="total"></div>
+          <div id="suction-estimate" class="hint"></div>
           <details id="pressure-preview" hidden>
             <summary>変更後の必要圧力 <strong id="pressure-preview-value"></strong> <span id="pressure-preview-warning" class="alarm" role="status"></span></summary>
             <div id="pressure-preview-values"></div>
@@ -51,6 +52,11 @@
           <details id="pressure-details">
             <summary>筒先別の目標値</summary>
             <ul id="pressure-paths"></ul>
+          </details>
+          <details id="equipment-details" hidden>
+            <summary>機材の推定圧力</summary>
+            <ul id="equipment-results"></ul>
+            <p class="hint">放水中のラインを対象に、区間端の推定圧力を照合。途中の低所や停止区間の圧力は実機で確認してください。</p>
           </details>
           <div id="alert" class="alarm" role="status"></div>
           <button id="recalculate-pressure" type="button" hidden>圧力再計算</button>
@@ -61,6 +67,7 @@
     </div>
     <footer class="bottom">
       <span>概算支援・訓練用。吸水・ポンプ性能による送水可否は実機で確認してください。</span>
+      <button id="edit-water-settings" type="button">水利・機材</button>
       <button id="edit-quadra-settings" type="button">噴霧基準</button>
       <button id="reset" type="button">初期化</button>
     </footer>
@@ -108,6 +115,22 @@
       </footer>
     </form>
   </dialog>
-  <script src="./app.js?v=098"></script>
+  <dialog class="overlay" id="water-settings" aria-labelledby="water-settings-title">
+    <form class="editor" id="water-settings-form">
+      <header><h2 id="water-settings-title">水利・機材</h2><button id="water-settings-close" type="button">閉じる</button></header>
+      <div class="options response-options">
+        <label>無圧水利の吸水高さ <select id="suction-height"><option value="">対象外・未設定</option></select></label>
+        <p class="hint">水面からポンプ吸水口までの高さ。吸管損失と実際の送水可否は別途確認してください。</p>
+        <strong>機材の使用圧（MPa・任意）</strong>
+        <p class="hint">同じ種類で使用圧が異なる場合は、使用する機材のうち最も低い値を入力してください。</p>
+        <label class="nozzle-ceiling">50 mmホース <input data-equipment="50" type="number" inputmode="decimal" min="0.001" step="any"></label>
+        <label class="nozzle-ceiling">65 mmホース <input data-equipment="65" type="number" inputmode="decimal" min="0.001" step="any"></label>
+        <label class="nozzle-ceiling">分岐金具 <input data-equipment="fork" type="number" inputmode="decimal" min="0.001" step="any"></label>
+        <label class="nozzle-ceiling">結合金具 <input data-equipment="coupling" type="number" inputmode="decimal" min="0.001" step="any"></label>
+      </div>
+      <footer><button type="submit">保存</button></footer>
+    </form>
+  </dialog>
+  <script src="./app.js?v=099"></script>
 </body>
 </html>

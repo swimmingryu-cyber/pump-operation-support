@@ -80,8 +80,8 @@ p { margin: 0; }
   .elevation-choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 #total, #pressure-details { font-size: clamp(14px, 2.2vw, 17px); color: #e1edf9; }
-#pressure-details summary { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-#pressure-paths { margin: 4px 0 0; padding-left: 16px; }
+#pressure-details summary, #equipment-details summary { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+#pressure-paths, #equipment-results { margin: 4px 0 0; padding-left: 16px; }
 .line button .pressure-basis { color: #ff939a; font-size: 12px; font-weight: 700; }
 
 .hose-controls, .hose-field {
