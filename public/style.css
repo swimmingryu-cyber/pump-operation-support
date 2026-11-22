@@ -147,8 +147,3 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
 .long-hose-entry label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #response-original { max-height: 30dvh; overflow: auto; }
 .response-options dl { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
-
-#pressure-preview { padding: 3px; border: 1px solid #6885a3; border-radius: 6px; }
-#pressure-preview summary { cursor: pointer; }
-#pressure-preview-values dl { margin: 3px 0; }
-#pressure-preview-values dd { margin: 0 0 3px; }

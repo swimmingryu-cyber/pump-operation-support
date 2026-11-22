@@ -14,11 +14,14 @@ const equipmentTypes = {
   fork: '分岐金具', coupling: '結合金具'
 };
 // Developer-maintained reference working pressures, not rupture or proof-test pressures.
-const equipmentPressureReferences = { 50: 1.3, 65: 1.3, fork: 0.7, coupling: 1.3 };
+const hosePressureReference = 1.3;
+const equipmentPressureReferences = {
+  50: hosePressureReference, 65: hosePressureReference,
+  fork: hosePressureReference, coupling: 1.3
+};
 const quadraRanges = [110, 230, 360, 470];
 // NH-50QF nominal dial flow is specified at 0.70 MPa. Other pressures remain estimates.
 const quadraFlowReferencePressure = 0.7;
-const pressureModel = 'quadra-priority-0.70';
 const quadraFlowNote = 'NH-50QF：0.70 MPaでレンジ表示流量。その他の圧力では流量は概算';
 
 const emptyBranch = () => ({ active: false, stopped: false, diam: 50, count: null, nozzle: null, setting: null, elevation: 0 });
@@ -34,17 +37,13 @@ function migrateElevations(lines, legacyElevation) {
     }))
   }));
 }
-let legacyHoldCleared = false;
 function load() {
   const initial = { flipped: false, lines: ports.map(emptyLine) };
   try {
     const current = JSON.parse(localStorage.getItem(storageKey));
     if (current?.lines?.length === ports.length) {
-      if (current.fixedPressure > 0 && current.fixedPressureModel !== pressureModel) {
-        // The previous layout used to calculate the held pressure is no longer available.
-        current.fixedPressure = null;
-        legacyHoldCleared = true;
-      }
+      delete current.fixedPressure;
+      delete current.fixedPressureModel;
       return current;
     }
     const previous = JSON.parse(localStorage.getItem('pump-v085'));
@@ -69,8 +68,6 @@ const data = load();
 let ctx = null, step = 0, partialDiameter = null, partialFlow = null;
 const $ = id => document.getElementById(id);
 function save() {
-  if (!data.lines.some(line => line.active)) data.fixedPressure = null;
-  if (data.fixedPressure == null) delete data.fixedPressureModel;
   try { localStorage.setItem(storageKey, JSON.stringify(data)); } catch {}
   render();
 }
@@ -126,16 +123,10 @@ function calculate() {
       fork: line.fork, index, name: ports[index].label, diameter: line.diam
     });
   });
-  const fixed = Number.isFinite(data.fixedPressure) && data.fixedPressure > 0;
-  if (missing || !paths.length) return {
-    ok: !missing, paths: [], stopped: !missing, fixed,
-    baseline: fixed && !missing ? atPressure([], data.fixedPressure) : null
-  };
+  if (missing || !paths.length) return { ok: !missing, paths: [], solution: null };
 
   const reference = pressureReference(lines, paths);
-  const candidate = solve(lines, reference);
-  return { ok: true, stopped: false, paths, lines, reference, fixed, candidate,
-    baseline: fixed ? atPressure(lines, data.fixedPressure) : candidate };
+  return { ok: true, paths, lines, reference, solution: solve(lines, reference) };
 }
 
 function outletFlow(path, head) {
@@ -338,29 +329,27 @@ function responseSummary(container, solution, model) {
 }
 
 function openResponses(model) {
-  const { baseline, candidate, reference, paths, lines } = model;
+  const { solution, reference, paths, lines } = model;
   $('response-quadra-note').hidden = !paths.some(path => path.branch.nozzle === 'クアドラ');
   $('response-quadra-note').textContent = quadraFlowNote;
   const original = $('response-original');
   const outletStatuses = paths.map(path => ({
     name: path.name,
-    warnings: outletWarnings(baseline.nozzles[path.id])
+    warnings: outletWarnings(solution.nozzles[path.id])
   }));
-  const warnings = equipmentChecks(baseline).filter(item => item.exceeded)
+  const warnings = equipmentChecks(solution).filter(item => item.exceeded)
     .map(item => item.label + ' ' + item.value);
-  if (pumpWarnings(baseline)) warnings.unshift(pumpWarnings(baseline));
-  const water = waterSupplyCheck(baseline);
+  if (pumpWarnings(solution)) warnings.unshift(pumpWarnings(solution));
+  const water = waterSupplyCheck(solution);
   original.classList.toggle('response-warning', warnings.length > 0 || Boolean(water?.shortage)
     || outletStatuses.some(status => status.warnings.hasWarning));
-  const before = model.fixed ? '据え置き試算（変更前の計算値）' : '現在の付設での試算';
-  original.textContent = before + ' ' + estimatedDischargeText(baseline.p)
+  original.textContent = '現在の付設での試算 ' + estimatedDischargeText(solution.p)
     + (water ? ' ／ ' + water.label + ' ' + water.summary : '')
     + (warnings.length ? ' ／ ' + warnings.join(' ／ ') : '');
   for (const status of outletStatuses) appendOutletWarnings(original, status.warnings, status.name + ' ');
   const targets = $('response-target');
   targets.replaceChildren(...paths.map(path => new Option(path.name, path.id)));
-  targets.value = (paths.find(path => outletWarnings(baseline.nozzles[path.id]).hasWarning)
-    ?? paths.find(path => outletWarnings(candidate.nozzles[path.id]).hasWarning)
+  targets.value = (paths.find(path => outletWarnings(solution.nozzles[path.id]).hasWarning)
     ?? reference).id;
 
   function showOptions() {
@@ -453,51 +442,22 @@ function alignHoses() {
   }
 }
 
-function holdDisplayedPressure() {
-  const before = calculate();
-  if (!before.fixed && before.baseline?.p > 0) {
-    data.fixedPressure = before.baseline.p;
-    data.fixedPressureModel = pressureModel;
-    legacyHoldCleared = false;
-  }
-}
-
 function toggleNozzle(branch) {
-  holdDisplayedPressure();
   branch.stopped = !branch.stopped;
   save();
 }
 
 function render() {
   const result = calculate();
-  const baseline = result.baseline;
-  $('pressure-model-notice').hidden = !legacyHoldCleared;
+  const solution = result.solution;
   $('respond').hidden = !result.reference;
   $('respond').onclick = result.reference ? () => openResponses(result) : null;
-  $('recalculate-pressure').hidden = !result.fixed;
   const quadraPriority = result.reference?.branch.nozzle === 'クアドラ';
-  $('pump-heading').textContent = result.fixed ? '変更前の計算圧を据え置き（試算）'
-    : quadraPriority ? '必要吐出圧力（クアドラ基準・推定）' : '必要吐出圧力（推定）';
-  $('pressure-preview-basis').textContent = quadraPriority ? '（クアドラ基準）' : '';
-  const preview = $('pressure-preview');
-  preview.hidden = !result.fixed || !result.candidate;
-  $('pressure-preview-values').replaceChildren();
-  if (!preview.hidden) {
-    const pressure = $('pressure-preview-value');
-    pressure.textContent = estimatedDischargeText(result.candidate.p);
-    const warningCount = result.paths.filter(path =>
-      outletWarnings(result.candidate.nozzles[path.id]).hasWarning).length;
-    const gearWarning = equipmentWarning(equipmentChecks(result.candidate));
-    const supplyWarning = waterSupplyCheck(result.candidate)?.shortage ? '消火栓の給水不足見込み' : '';
-    pressure.classList.toggle('danger', Boolean(gearWarning || supplyWarning));
-    const warnings = [warningCount ? '目標と警戒条件が両立しない筒先 ' + warningCount + '口' : '',
-      gearWarning, supplyWarning, pumpWarnings(result.candidate)].filter(Boolean);
-    $('pressure-preview-warning').textContent = warnings.join(' ／ ');
-    responseSummary($('pressure-preview-values'), result.candidate, result);
-  }
+  $('pump-heading').textContent = quadraPriority
+    ? '必要吐出圧力（クアドラ基準・推定）' : '必要吐出圧力（推定）';
   $('deck').classList.toggle('flipped', Boolean(data.flipped));
   $('flip').setAttribute('aria-pressed', String(Boolean(data.flipped)));
-  const equipment = baseline ? equipmentChecks(baseline) : [];
+  const equipment = solution ? equipmentChecks(solution) : [];
   const list = $('lines');
   list.replaceChildren();
   data.lines.forEach((line, index) => {
@@ -555,7 +515,7 @@ function render() {
       }
       const path = result.paths.find(item => item.index === index && item.branchIndex === branchIndex);
       if (path) {
-        const nozzle = baseline.nozzles[path.id];
+        const nozzle = solution.nozzles[path.id];
         const warnings = outletWarnings(nozzle);
         const estimate = document.createElement('small');
         estimate.className = 'mixed-estimate';
@@ -567,7 +527,7 @@ function render() {
         warning.className = 'mixed-estimate';
         appendOutletWarnings(warning, warnings);
         if (warning.childElementCount) edit.append(warning);
-        if (!result.fixed && path.id === result.reference.id) {
+        if (path.id === result.reference.id) {
           const basis = document.createElement('small');
           basis.className = 'pressure-basis';
           basis.textContent = '◆圧力基準';
@@ -597,25 +557,19 @@ function render() {
   updateLayout();
   const pr = document.querySelector('.pressure');
   const configured = data.lines.some(line => line.active);
-  pr.textContent = result.fixed ? estimatedDischargeText(data.fixedPressure) : baseline ? estimatedDischargeText(baseline.p) : configured && result.stopped ? '放水停止' : '— MPa';
-  pr.classList.toggle('danger', !!baseline && (baseline.p <= 0 || baseline.p > 1.4));
-  $('total').textContent = baseline ? '推定総送水量：' + estimatedFlowText(baseline.total) : result.ok ? '' : '設定未完了';
-  const water = baseline ? waterSupplyCheck(baseline) : null;
+  pr.textContent = solution ? estimatedDischargeText(solution.p)
+    : configured && result.ok ? '放水停止' : '— MPa';
+  pr.classList.toggle('danger', !!solution && (solution.p <= 0 || solution.p > 1.4));
+  $('total').textContent = solution ? '推定総送水量：' + estimatedFlowText(solution.total) : result.ok ? '' : '設定未完了';
+  const water = solution ? waterSupplyCheck(solution) : null;
   const supplyEstimate = $('supply-estimate');
   supplyEstimate.textContent = water ? water.label + ' ' + water.summary : '';
   supplyEstimate.classList.toggle('danger', Boolean(water?.shortage));
   const gearWarning = equipmentWarning(equipment);
   const alert = $('alert');
-  const warningCount = baseline ? result.paths.filter(path =>
-    outletWarnings(baseline.nozzles[path.id]).hasWarning).length : 0;
   alert.classList.toggle('danger', Boolean(gearWarning));
-  const warnings = baseline ? [pumpWarnings(baseline), warningCount ? '筒先警告 ' + warningCount + '口' : '',
-    gearWarning].filter(Boolean) : [];
-  if (!result.fixed && warningCount) warnings.push('目標と警戒条件の両立を要確認');
-  if (result.fixed && result.ok) warnings.push(result.stopped
-    ? '全筒先停止中：実機の締切運転・過熱に注意'
-    : '放水が安定した後の推定・水撃は計算対象外');
-  alert.textContent = baseline ? warnings.join(' ／ ')
+  const warnings = solution ? [pumpWarnings(solution), gearWarning].filter(Boolean) : [];
+  alert.textContent = solution ? warnings.join(' ／ ')
     : !result.ok ? '未入力の筒先・ホースがあります'
     : configured ? '全線停止中：必要圧力は算出しません' : '';
 }
@@ -643,22 +597,9 @@ function back() {
   draw();
 }
 function advance(next) { step = next; draw(); }
-function flowingOutletCount(line) {
-  if (!line.active) return 0;
-  const branches = line.fork ? line.branches : line.branches.slice(0, 1);
-  return branches.filter(branch => branch.active && !branch.stopped && branch.setting && (!line.fork || branch.count > 0)).length;
-}
-
 function finish() {
   ctx.draft.active = true;
   if (ctx.mode !== 'hose') ctx.draft.branches[ctx.j ?? 0].active = true;
-  const previous = data.lines[ctx.i];
-  if (flowingOutletCount(ctx.draft) > flowingOutletCount(previous)) {
-    data.fixedPressure = null;
-    legacyHoldCleared = false;
-  } else {
-    holdDisplayedPressure();
-  }
   data.lines[ctx.i] = ctx.draft;
   save();
   closeOverlay();
@@ -859,10 +800,6 @@ else {
     text(quadraFlowNote));
 }
 }
-$('recalculate-pressure').onclick = () => {
-  data.fixedPressure = null;
-  save();
-};
 $('response-close').onclick = () => $('response').close();
 const waterDialog = $('water-settings');
 const waterSourceInput = $('water-source');
@@ -915,7 +852,6 @@ $('back').onclick = back;
 $('delete').onclick = () => {
   const { i } = ctx;
   if (!confirm(ports[i].label + 'のホースライン設定を削除しますか？')) return;
-  holdDisplayedPressure();
   data.lines[i] = emptyLine();
   save();
   closeOverlay();
@@ -928,14 +864,13 @@ $('overlay').addEventListener('close', () => {
 });
 $('reset').onclick = () => {
   if (!confirm('すべての設定を初期化しますか？')) return;
-  legacyHoldCleared = false;
   delete data.quadraFogLimit;
   delete data.waterSource;
   delete data.suctionHeight;
   delete data.suctionCount;
   delete data.hydrantFlow;
   delete data.equipmentLimits;
-  Object.assign(data, { flipped: false, fixedPressure: null, lines: ports.map(emptyLine) });
+  Object.assign(data, { flipped: false, lines: ports.map(emptyLine) });
   save();
 };
 new ResizeObserver(updateLayout).observe($('lines'));
