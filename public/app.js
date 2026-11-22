@@ -105,11 +105,13 @@ function calculate() {
     baseline: fixed && !missing ? atPressure([], data.fixedPressure) : null
   };
 
-  const priority = paths.filter(path => path.branch.nozzle === 'クアドラ');
-  const reference = (priority.length ? priority : paths).reduce((best, path) =>
+  // Each outlet has a minimum pressure at the pump for its target to be met.
+  // The highest minimum covers all active outlets with the valves fully open.
+  const reference = paths.reduce((best, path) =>
     requiredPressure(lines, path) > requiredPressure(lines, best) ? path : best);
-  return { ok: true, stopped: false, paths, lines, reference, fixed,
-    baseline: fixed ? atPressure(lines, data.fixedPressure) : solve(lines, reference) };
+  const candidate = solve(lines, reference);
+  return { ok: true, stopped: false, paths, lines, reference, fixed, candidate,
+    baseline: fixed ? atPressure(lines, data.fixedPressure) : candidate };
 }
 
 function outletFlow(path, head) {
@@ -199,7 +201,7 @@ function responseSummary(container, solution, model) {
 }
 
 function openResponses(model) {
-  const { baseline, reference, paths, lines } = model;
+  const { baseline, candidate, reference, paths, lines } = model;
   const original = $('response-original');
   const warnings = paths.flatMap(path => {
     const status = outletWarnings(path, baseline.nozzles[path.id]);
@@ -213,6 +215,7 @@ function openResponses(model) {
   const targets = $('response-target');
   targets.replaceChildren(...paths.map(path => new Option(path.name, path.id)));
   targets.value = (paths.find(path => outletWarnings(path, baseline.nozzles[path.id]).danger.length)
+    ?? paths.find(path => outletWarnings(path, candidate.nozzles[path.id]).danger.length)
     ?? paths.find(path => outletWarnings(path, baseline.nozzles[path.id]).notes.length) ?? reference).id;
 
   function showOptions() {
@@ -291,11 +294,13 @@ function alignHoses() {
   }
 }
 
+function holdDisplayedPressure() {
+  const before = calculate();
+  if (!before.fixed && before.baseline?.p > 0) data.fixedPressure = before.baseline.p;
+}
+
 function toggleNozzle(branch) {
-  if (!branch.stopped) {
-    const before = calculate();
-    if (!before.fixed && before.baseline?.p > 0) data.fixedPressure = before.baseline.p;
-  }
+  holdDisplayedPressure();
   branch.stopped = !branch.stopped;
   save();
 }
@@ -306,9 +311,20 @@ function render() {
   $('respond').hidden = !result.reference;
   $('respond').onclick = result.reference ? () => openResponses(result) : null;
   $('recalculate-pressure').hidden = !result.fixed;
-  $('pump-heading').textContent = result.fixed ? '固定ポンプ吐出圧力'
-    : result.reference?.branch.nozzle === 'クアドラ'
-    ? '推定ポンプ圧力（クアドラ優先）' : '推定ポンプ圧力';
+  $('pump-heading').textContent = result.fixed ? '据え置き吐出圧力（試算）' : '必要吐出圧力（推定）';
+  const preview = $('pressure-preview');
+  preview.hidden = !result.fixed || !result.candidate;
+  $('pressure-preview-values').replaceChildren();
+  if (!preview.hidden) {
+    const pressure = $('pressure-preview-value');
+    pressure.textContent = pressureText(result.candidate.p);
+    const warningCount = result.paths.filter(path =>
+      outletWarnings(path, result.candidate.nozzles[path.id]).danger.length > 0).length;
+    pressure.classList.toggle('danger', warningCount > 0);
+    const warnings = [warningCount ? '目標と警戒条件が両立しない筒先 ' + warningCount + '口' : '', pumpWarnings(result.candidate)].filter(Boolean);
+    $('pressure-preview-warning').textContent = warnings.join(' ／ ');
+    responseSummary($('pressure-preview-values'), result.candidate, result);
+  }
   $('deck').classList.toggle('flipped', Boolean(data.flipped));
   $('flip').setAttribute('aria-pressed', String(Boolean(data.flipped)));
   const list = $('lines');
@@ -403,7 +419,9 @@ function render() {
   for (const path of result.paths) {
     const item = document.createElement('li');
     item.textContent = path.name + ' ／ 目標 ' + flowText(path.target.q) + ' ／ ' + pressureText(path.target.p)
-      + (!result.fixed && path.id === result.reference.id ? ' ◆' : '');
+      + (path.id === result.reference.id ? ' ／ 必要圧力の基準' : '')
+      + (!path.branch.maxPressure ? ' ／ 圧力上限未設定' : ' ／ 圧力上限 ' + pressureText(path.branch.maxPressure))
+      + (path.reactionCoefficient === null ? ' ／ 反動力未算出' : '');
     pressurePaths.append(item);
   }
   const configured = data.lines.some(line => line.active);
@@ -415,7 +433,10 @@ function render() {
     outletWarnings(path, baseline.nozzles[path.id]).danger.length).length : 0;
   alert.classList.toggle('danger', warningCount > 0);
   const warnings = baseline ? [pumpWarnings(baseline), warningCount ? '筒先警告 ' + warningCount + '口' : ''].filter(Boolean) : [];
-  if (result.fixed && result.ok) warnings.push(result.stopped ? '全筒先停止中' : '圧力据え置き・放水が落ち着いた後の推定');
+  if (!result.fixed && warningCount) warnings.push('目標と警戒条件の両立を要確認');
+  if (result.fixed && result.ok) warnings.push(result.stopped
+    ? '全筒先停止中：実機の締切運転・過熱に注意'
+    : '放水が安定した後の推定・水撃は計算対象外');
   alert.textContent = baseline ? warnings.join(' ／ ') || '概算値：筒先と連携して調整'
     : !result.ok ? '未入力の筒先・ホースがあります'
     : configured ? '全線停止中：必要圧力は算出しません' : '';
@@ -490,6 +511,7 @@ function finish() {
   if (ceiling) ctx.draft.branches[ctx.j ?? 0].maxPressure = ceiling.valueAsNumber || null;
   ctx.draft.active = true;
   ctx.draft.branches[ctx.j ?? 0].active = true;
+  holdDisplayedPressure();
   data.lines[ctx.i] = ctx.draft;
   save();
   closeOverlay();
@@ -624,6 +646,7 @@ $('back').onclick = back;
 $('delete').onclick = () => {
   const { i } = ctx;
   if (!confirm(ports[i].label + 'のホースライン設定を削除しますか？')) return;
+  holdDisplayedPressure();
   data.lines[i] = emptyLine();
   save();
   closeOverlay();
