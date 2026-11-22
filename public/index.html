@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0d1929">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>消防ポンプ運用支援 v0.9.10</title>
+  <title>消防ポンプ運用支援 v0.9.11</title>
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./style.css?v=0910">
+  <link rel="stylesheet" href="./style.css?v=0911">
 </head>
 <body>
   <main class="shell" id="main">
     <header class="top">
-      <strong>消防ポンプ運用支援 <small>v0.9.10</small></strong>
+      <strong>消防ポンプ運用支援 <small>v0.9.11</small></strong>
       <button id="flip" type="button" aria-pressed="false">⇄ 左右反転</button>
     </header>
     <div class="deck" id="deck">
@@ -126,7 +126,10 @@
         </select></label>
         <div id="draft-fields" hidden>
           <label>吸水高さ <select id="suction-height"><option value="">未設定</option></select></label>
-          <p class="hint">水面からポンプ吸水口までの高さ。吸管損失と実際の送水可否は別途確認してください。</p>
+          <label>水利に投入した吸管 <select id="suction-count">
+            <option value="">未設定</option><option value="1">1本</option><option value="2">2本（並列）</option>
+          </select></label>
+          <p class="hint">吸水高さは水面からポンプ吸水口まで。直列につないだ吸管は投入1本として扱います。吸管損失と送水能力は実車で確認してください。</p>
         </div>
         <div id="hydrant-fields" hidden>
           <label class="nozzle-ceiling">消火栓の見込給水量（L/min） <input id="hydrant-flow" type="number" inputmode="decimal" min="0" step="any"></label>
@@ -142,6 +145,6 @@
       <footer><button type="submit">保存</button></footer>
     </form>
   </dialog>
-  <script src="./app.js?v=0910"></script>
+  <script src="./app.js?v=0911"></script>
 </body>
 </html>

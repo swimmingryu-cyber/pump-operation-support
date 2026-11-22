@@ -130,8 +130,7 @@ function calculate() {
 
   // Each outlet has a minimum pressure at the pump for its target to be met.
   // The highest minimum covers all active outlets with the valves fully open.
-  const reference = paths.reduce((best, path) =>
-    requiredPressure(lines, path) > requiredPressure(lines, best) ? path : best);
+  const reference = pressureReference(lines, paths);
   const candidate = solve(lines, reference);
   return { ok: true, stopped: false, paths, lines, reference, fixed, candidate,
     baseline: fixed ? atPressure(lines, data.fixedPressure) : candidate };
@@ -148,6 +147,11 @@ function requiredPressure(lines, reference, adjustedId) {
   const total = line.outlets.reduce((sum, path) =>
     sum + (path.id === adjustedId ? path.target.q : outletFlow(path, head)), 0);
   return head + line.fitting + line.loss * total ** 2;
+}
+
+function pressureReference(lines, paths) {
+  return paths.reduce((best, path) =>
+    requiredPressure(lines, path) > requiredPressure(lines, best) ? path : best);
 }
 
 function solve(lines, reference, adjustedId = null) {
@@ -221,7 +225,7 @@ function outletWarnings(path, nozzle) {
     }
   }
   if (nozzle.p - path.target.p >= 0.0005) notes.push('目標圧力超過');
-  if (path.target.q - nozzle.q >= 0.5) notes.push('目標流量未達');
+  if (path.target.q - nozzle.q >= 0.5) danger.push('目標流量未達');
   return { danger, notes };
 }
 
@@ -246,11 +250,15 @@ function waterSupplyCheck(result) {
     return { label: '消火栓', summary, shortage };
   }
   const height = data.suctionHeight;
-  if (source !== 'draft' || !suctionHeights.includes(height) || !suppliesWater) return null;
+  if (source !== 'draft' || !suppliesWater) return null;
+  const count = data.suctionCount;
+  const pipes = count === 1 ? '吸管1系統' : count === 2 ? '吸管2系統（並列）' : '吸管本数未設定';
   const lift = height * pressurePerMetre;
-  return { label: '無圧水利', shortage: false,
-    summary: '吸水 ' + height + ' m ／ 吸上げ分 ' + pressureText(lift)
-      + ' ／ ポンプ差圧の目安 ' + pressureText(result.p + lift) + '（吸管損失除く）' };
+  const summary = suctionHeights.includes(height)
+    ? '吸水 ' + height + ' m ／ 吸上げ分 ' + pressureText(lift)
+      + (result.p > 0 ? ' ／ ポンプ差圧の目安 ' + pressureText(result.p + lift) + '（吸管損失除く）' : '')
+    : '吸水高さ未設定';
+  return { label: '無圧水利', shortage: false, summary: summary + ' ／ ' + pipes + ' ／ 送水可否は要確認' };
 }
 
 function pumpWarnings(result) {
@@ -280,6 +288,8 @@ function equipmentChecks(result) {
   });
 }
 
+const estimatedDischargeText = p => p > 0 ? pressureText(p) : '要実測';
+
 function equipmentWarning(checks) {
   if (checks.some(check => check.exceeded && check.custom)) return '機材使用圧超過';
   if (checks.some(check => check.exceeded)) return '機材の警告参考値を超過';
@@ -287,7 +297,7 @@ function equipmentWarning(checks) {
 }
 
 function responseSummary(container, solution, model) {
-  const rows = [['再計算した推定ポンプ圧力', pressureText(solution.p)], ['総送水量の目安', flowText(solution.total)]];
+  const rows = [['対策後の必要吐出圧（試算）', estimatedDischargeText(solution.p)], ['総送水量の目安', flowText(solution.total)]];
   const water = waterSupplyCheck(solution);
   if (water) rows.push([water.label, water.summary, water.shortage]);
   for (const path of model.paths) {
@@ -327,8 +337,8 @@ function openResponses(model) {
   if (pumpWarnings(baseline)) warnings.unshift(pumpWarnings(baseline));
   const water = waterSupplyCheck(baseline);
   original.classList.toggle('response-warning', warnings.length > 0 || Boolean(water?.shortage));
-  const before = model.fixed ? '変更前（固定ポンプ吐出圧力）' : '変更前（推定ポンプ圧力）';
-  original.textContent = before + ' ' + pressureText(baseline.p)
+  const before = model.fixed ? '据え置き試算（変更前の計算値）' : '現在の付設での試算';
+  original.textContent = before + ' ' + estimatedDischargeText(baseline.p)
     + (water ? ' ／ ' + water.label + ' ' + water.summary : '')
     + (warnings.length ? ' ／ ' + warnings.join(' ／ ') : '');
   const targets = $('response-target');
@@ -345,19 +355,27 @@ function openResponses(model) {
       const diameterBefore = Number(selected.branch.setting.split('/')[0]);
       for (const diameter of nozzleDiameters.filter(value => value !== diameterBefore)) {
         const proposed = qNozzle({ nozzle:'ダブコン', setting:diameter + '/' + selected.target.q });
-        const changed = lines.map(line => ({...line, outlets:line.outlets.map(path => path.id === selected.id
-          ? {...path, nozzleCoefficient:proposed.p / proposed.q ** 2,
-            reactionCoefficient:proposed.force / proposed.q ** 2} : path)}));
-        const solution = solve(changed, reference);
+        const newOutlet = {
+          ...selected,
+          target: proposed,
+          nozzleCoefficient: proposed.p / proposed.q ** 2,
+          reactionCoefficient: proposed.force / proposed.q ** 2
+        };
+        const changedPaths = paths.map(path => path.id === selected.id ? newOutlet : path);
+        const changed = lines.map(line => ({...line, outlets:line.outlets.map(path => changedPaths[path.id])}));
+        const newReference = pressureReference(changed, changedPaths);
+        const solution = solve(changed, newReference);
         const item = document.createElement('details');
         const heading = document.createElement('summary');
         const nozzle = solution.nozzles[selected.id];
         const delta = Math.round(nozzle.q - selected.target.q);
         heading.textContent = diameter + ' mm ／ ' + flowText(nozzle.q)
           + '（目標差 ' + (delta > 0 ? '+' : '') + delta + ' L/min）'
-          + (outletWarnings(selected, nozzle).danger.length ? ' ／ 警告あり' : '');
-        item.append(heading);
-        responseSummary(item, solution, model);
+          + (changedPaths.some(path => outletWarnings(path, solution.nozzles[path.id]).danger.length)
+            || equipmentWarning(equipmentChecks(solution)) || waterSupplyCheck(solution)?.shortage
+            || pumpWarnings(solution) ? ' ／ 要確認' : '');
+        item.append(heading, text('対策後の圧力基準：' + newReference.name));
+        responseSummary(item, solution, { paths: changedPaths });
         alternatives.append(item);
       }
     } else alternatives.textContent = '口径変更の試算はダブコンが対象です。';
@@ -369,11 +387,17 @@ function openResponses(model) {
     if (adjusted && adjusted.nozzles[selected.id].available > selected.target.q + 0.01) {
       const line = lines.find(item => item.outlets.includes(selected));
       throttle.append(text('調整対象：' + selected.name + (line.fork ? '側の分岐' : 'の放口')));
+      const shortfalls = paths.filter(path => path.target.q - adjusted.nozzles[path.id].q >= 0.5);
+      if (shortfalls.length) {
+        const warning = text('目標流量を維持できない筒先：' + shortfalls.map(path => path.name).join('、'));
+        warning.classList.add('danger');
+        throttle.append(warning);
+      }
       responseSummary(throttle, adjusted, model);
       throttle.append(text('関係する筒先員と連携し、実測値を確認。総送水量は照合の目安です。'));
     } else throttle.textContent = '基準筒先の目標を保ったまま、この筒先を絞って目標流量に合わせる案は成立しません。';
   }
-  $('response-reference').textContent = '対策後の圧力再計算基準：' + reference.name;
+  $('response-reference').textContent = '現行付設の圧力基準：' + reference.name;
   targets.onchange = showOptions;
   showOptions();
   $('response').querySelectorAll('.response-options > details').forEach(panel => panel.open = false);
@@ -430,13 +454,13 @@ function render() {
   $('respond').hidden = !result.reference;
   $('respond').onclick = result.reference ? () => openResponses(result) : null;
   $('recalculate-pressure').hidden = !result.fixed;
-  $('pump-heading').textContent = result.fixed ? '据え置き吐出圧力（試算）' : '必要吐出圧力（推定）';
+  $('pump-heading').textContent = result.fixed ? '変更前の計算圧を据え置き（試算）' : '必要吐出圧力（推定）';
   const preview = $('pressure-preview');
   preview.hidden = !result.fixed || !result.candidate;
   $('pressure-preview-values').replaceChildren();
   if (!preview.hidden) {
     const pressure = $('pressure-preview-value');
-    pressure.textContent = pressureText(result.candidate.p);
+    pressure.textContent = estimatedDischargeText(result.candidate.p);
     const warningCount = result.paths.filter(path =>
       outletWarnings(path, result.candidate.nozzles[path.id]).danger.length > 0).length;
     const gearWarning = equipmentWarning(equipmentChecks(result.candidate));
@@ -547,8 +571,8 @@ function render() {
     pressurePaths.append(item);
   }
   const configured = data.lines.some(line => line.active);
-  pr.textContent = result.fixed ? pressureText(data.fixedPressure) : baseline ? pressureText(baseline.p) : configured && result.stopped ? '放水停止' : '— MPa';
-  pr.classList.toggle('danger', !!baseline && baseline.p > 1.4);
+  pr.textContent = result.fixed ? pressureText(data.fixedPressure) : baseline ? estimatedDischargeText(baseline.p) : configured && result.stopped ? '放水停止' : '— MPa';
+  pr.classList.toggle('danger', !!baseline && (baseline.p <= 0 || baseline.p > 1.4));
   $('total').textContent = baseline ? '推定総送水量：' + flowText(baseline.total) : result.ok ? '' : '設定未完了';
   const water = baseline ? waterSupplyCheck(baseline) : null;
   const supplyEstimate = $('supply-estimate');
@@ -816,6 +840,7 @@ $('quadra-settings-form').onsubmit = event => {
 const waterDialog = $('water-settings');
 const waterSourceInput = $('water-source');
 const suctionInput = $('suction-height');
+const suctionCountInput = $('suction-count');
 const hydrantInput = $('hydrant-flow');
 suctionInput.append(...suctionHeights.map(height => new Option(height + ' m', String(height))));
 const equipmentInputs = [...document.querySelectorAll('[data-equipment]')];
@@ -824,13 +849,14 @@ for (const input of equipmentInputs) {
 }
 function updateWaterSourceFields() {
   const source = waterSourceInput.value;
-  $('draft-fields').hidden = suctionInput.disabled = source !== 'draft';
+  $('draft-fields').hidden = suctionInput.disabled = suctionCountInput.disabled = source !== 'draft';
   $('hydrant-fields').hidden = hydrantInput.disabled = source !== 'hydrant';
 }
 waterSourceInput.onchange = updateWaterSourceFields;
 $('edit-water-settings').onclick = () => {
   waterSourceInput.value = waterSource();
   suctionInput.value = data.suctionHeight ?? '';
+  suctionCountInput.value = data.suctionCount ?? '';
   hydrantInput.value = data.hydrantFlow ?? '';
   for (const input of equipmentInputs) input.value = data.equipmentLimits?.[input.dataset.equipment] ?? '';
   updateWaterSourceFields();
@@ -841,7 +867,10 @@ $('water-settings-form').onsubmit = event => {
   event.preventDefault();
   if (!event.currentTarget.reportValidity()) return;
   data.waterSource = waterSourceInput.value;
-  if (data.waterSource === 'draft') data.suctionHeight = suctionInput.value === '' ? null : Number(suctionInput.value);
+  if (data.waterSource === 'draft') {
+    data.suctionHeight = suctionInput.value === '' ? null : Number(suctionInput.value);
+    data.suctionCount = suctionCountInput.value === '' ? null : Number(suctionCountInput.value);
+  }
   if (data.waterSource === 'hydrant') data.hydrantFlow = hydrantInput.value === '' ? null : hydrantInput.valueAsNumber;
   data.equipmentLimits = Object.fromEntries(equipmentInputs.filter(input => input.value)
     .map(input => [input.dataset.equipment, input.valueAsNumber]));
@@ -875,6 +904,7 @@ $('reset').onclick = () => {
   delete data.quadraFogLimit;
   delete data.waterSource;
   delete data.suctionHeight;
+  delete data.suctionCount;
   delete data.hydrantFlow;
   delete data.equipmentLimits;
   Object.assign(data, { flipped: false, fixedPressure: null, lines: ports.map(emptyLine) });
