@@ -209,6 +209,7 @@ function atPressure(lines, p, adjustedId = null) {
 
 function outletWarnings(path, nozzle) {
   const danger = [];
+  const low = [];
   const notes = [];
   if (nozzle.force !== null && nozzle.force >= reactionReference) {
     danger.push('反動力注意 ' + Math.round(nozzle.force) + ' N（参考値200 N）');
@@ -219,14 +220,29 @@ function outletWarnings(path, nozzle) {
   if (path.branch.nozzle === 'クアドラ') {
     const limit = quadraFogLimit();
     const range = Number(path.branch.setting.split('/')[0]);
-    if (range < limit.range) danger.push('噴霧の目安レンジ未満（' + limit.range + '以上）');
+    if (range < limit.range) low.push('噴霧の目安レンジ未満（' + limit.range + '以上）');
     if (nozzle.p < limit.pressure - 1e-9) {
-      danger.push('噴霧の運用下限未満（' + limit.pressure.toFixed(2) + ' MPa）');
+      low.push('噴霧の運用下限未満（' + limit.pressure.toFixed(2) + ' MPa）');
     }
   }
   if (nozzle.p - path.target.p >= 0.0005) notes.push('目標圧力超過');
-  if (path.target.q - nozzle.q >= 0.5) danger.push('目標流量未達');
-  return { danger, notes };
+  if (path.target.q - nozzle.q >= 0.5) low.push('目標流量未達');
+  return { danger, low, notes, hasWarning: Boolean(danger.length || low.length) };
+}
+
+function appendOutletWarnings(container, warnings, prefix = '') {
+  const groups = [
+    ['danger', '↑ ', warnings.danger],
+    ['low-output', '↓ ', warnings.low],
+    ['pressure-above-target', '↑ ', warnings.notes]
+  ];
+  for (const [color, direction, messages] of groups) {
+    if (!messages.length) continue;
+    const status = document.createElement('span');
+    status.className = 'outlet-warning ' + color;
+    status.textContent = prefix + direction + messages.join(' ／ ');
+    container.append(status);
+  }
 }
 
 function waterSource() {
@@ -303,20 +319,19 @@ function responseSummary(container, solution, model) {
   for (const path of model.paths) {
     const nozzle = solution.nozzles[path.id];
     const warnings = outletWarnings(path, nozzle);
-    const note = [...warnings.danger, ...warnings.notes].join(' ／ ');
-    rows.push([path.name, flowText(nozzle.q) + ' ／ ' + pressureText(nozzle.p) + (note ? ' ／ ' + note : ''),
-      warnings.danger.length > 0]);
+    rows.push([path.name, flowText(nozzle.q) + ' ／ ' + pressureText(nozzle.p), false, warnings]);
   }
   for (const check of equipmentChecks(solution).filter(item => item.exceeded)) {
     rows.push([check.label, check.value, true]);
   }
   const list = document.createElement('dl');
-  for (const [key, value, danger] of rows) {
+  for (const [key, value, danger, warnings] of rows) {
     const label = document.createElement('dt');
     const result = document.createElement('dd');
     label.textContent = key;
     result.textContent = value;
     if (danger) result.className = 'danger';
+    if (warnings) appendOutletWarnings(result, warnings);
     list.append(label, result);
   }
   container.append(list);
@@ -328,23 +343,25 @@ function openResponses(model) {
   $('response-quadra-note').hidden = !paths.some(path => path.branch.nozzle === 'クアドラ');
   $('response-quadra-note').textContent = 'クアドラ噴霧の運用下限 ' + quadraLimitText() + ' ／ 流量は暫定推定';
   const original = $('response-original');
-  const warnings = paths.flatMap(path => {
-    const status = outletWarnings(path, baseline.nozzles[path.id]);
-    return [...status.danger, ...status.notes].map(message => path.name + ' ' + message);
-  });
-  warnings.push(...equipmentChecks(baseline).filter(item => item.exceeded)
-    .map(item => item.label + ' ' + item.value));
+  const outletStatuses = paths.map(path => ({
+    name: path.name,
+    warnings: outletWarnings(path, baseline.nozzles[path.id])
+  }));
+  const warnings = equipmentChecks(baseline).filter(item => item.exceeded)
+    .map(item => item.label + ' ' + item.value);
   if (pumpWarnings(baseline)) warnings.unshift(pumpWarnings(baseline));
   const water = waterSupplyCheck(baseline);
-  original.classList.toggle('response-warning', warnings.length > 0 || Boolean(water?.shortage));
+  original.classList.toggle('response-warning', warnings.length > 0 || Boolean(water?.shortage)
+    || outletStatuses.some(status => status.warnings.hasWarning));
   const before = model.fixed ? '据え置き試算（変更前の計算値）' : '現在の付設での試算';
   original.textContent = before + ' ' + estimatedDischargeText(baseline.p)
     + (water ? ' ／ ' + water.label + ' ' + water.summary : '')
     + (warnings.length ? ' ／ ' + warnings.join(' ／ ') : '');
+  for (const status of outletStatuses) appendOutletWarnings(original, status.warnings, status.name + ' ');
   const targets = $('response-target');
   targets.replaceChildren(...paths.map(path => new Option(path.name, path.id)));
-  targets.value = (paths.find(path => outletWarnings(path, baseline.nozzles[path.id]).danger.length)
-    ?? paths.find(path => outletWarnings(path, candidate.nozzles[path.id]).danger.length)
+  targets.value = (paths.find(path => outletWarnings(path, baseline.nozzles[path.id]).hasWarning)
+    ?? paths.find(path => outletWarnings(path, candidate.nozzles[path.id]).hasWarning)
     ?? paths.find(path => outletWarnings(path, baseline.nozzles[path.id]).notes.length) ?? reference).id;
 
   function showOptions() {
@@ -371,7 +388,7 @@ function openResponses(model) {
         const delta = Math.round(nozzle.q - selected.target.q);
         heading.textContent = diameter + ' mm ／ ' + flowText(nozzle.q)
           + '（目標差 ' + (delta > 0 ? '+' : '') + delta + ' L/min）'
-          + (changedPaths.some(path => outletWarnings(path, solution.nozzles[path.id]).danger.length)
+          + (changedPaths.some(path => outletWarnings(path, solution.nozzles[path.id]).hasWarning)
             || equipmentWarning(equipmentChecks(solution)) || waterSupplyCheck(solution)?.shortage
             || pumpWarnings(solution) ? ' ／ 要確認' : '');
         item.append(heading, text('対策後の圧力基準：' + newReference.name));
@@ -390,7 +407,7 @@ function openResponses(model) {
       const shortfalls = paths.filter(path => path.target.q - adjusted.nozzles[path.id].q >= 0.5);
       if (shortfalls.length) {
         const warning = text('目標流量を維持できない筒先：' + shortfalls.map(path => path.name).join('、'));
-        warning.classList.add('danger');
+        warning.classList.add('low-output');
         throttle.append(warning);
       }
       responseSummary(throttle, adjusted, model);
@@ -462,10 +479,10 @@ function render() {
     const pressure = $('pressure-preview-value');
     pressure.textContent = estimatedDischargeText(result.candidate.p);
     const warningCount = result.paths.filter(path =>
-      outletWarnings(path, result.candidate.nozzles[path.id]).danger.length > 0).length;
+      outletWarnings(path, result.candidate.nozzles[path.id]).hasWarning).length;
     const gearWarning = equipmentWarning(equipmentChecks(result.candidate));
     const supplyWarning = waterSupplyCheck(result.candidate)?.shortage ? '消火栓の給水不足見込み' : '';
-    pressure.classList.toggle('danger', Boolean(warningCount || gearWarning || supplyWarning));
+    pressure.classList.toggle('danger', Boolean(gearWarning || supplyWarning));
     const warnings = [warningCount ? '目標と警戒条件が両立しない筒先 ' + warningCount + '口' : '',
       gearWarning, supplyWarning, pumpWarnings(result.candidate)].filter(Boolean);
     $('pressure-preview-warning').textContent = warnings.join(' ／ ');
@@ -520,16 +537,14 @@ function render() {
         const warnings = outletWarnings(path, nozzle);
         const estimate = document.createElement('small');
         estimate.className = 'mixed-estimate';
-        estimate.classList.toggle('danger', warnings.danger.length > 0);
+        if (warnings.danger.length && !warnings.low.length) estimate.classList.add('danger');
+        if (warnings.low.length && !warnings.danger.length && !warnings.notes.length) estimate.classList.add('low-output');
         estimate.textContent = '推定 ' + flowText(nozzle.q) + ' ／ ' + pressureText(nozzle.p);
         edit.append(estimate);
-        const note = [...warnings.danger, ...warnings.notes];
-        if (note.length) {
-          const warning = document.createElement('small');
-          warning.className = warnings.danger.length ? 'mixed-estimate danger' : 'mixed-estimate target-note';
-          warning.textContent = note.join(' ／ ');
-          edit.append(warning);
-        }
+        const warning = document.createElement('small');
+        warning.className = 'mixed-estimate';
+        appendOutletWarnings(warning, warnings);
+        if (warning.childElementCount) edit.append(warning);
         if (!result.fixed && path.id === result.reference.id) {
           const basis = document.createElement('small');
           basis.className = 'pressure-basis';
@@ -589,8 +604,8 @@ function render() {
   }));
   const alert = $('alert');
   const warningCount = baseline ? result.paths.filter(path =>
-    outletWarnings(path, baseline.nozzles[path.id]).danger.length).length : 0;
-  alert.classList.toggle('danger', Boolean(warningCount || gearWarning));
+    outletWarnings(path, baseline.nozzles[path.id]).hasWarning).length : 0;
+  alert.classList.toggle('danger', Boolean(gearWarning));
   const warnings = baseline ? [pumpWarnings(baseline), warningCount ? '筒先警告 ' + warningCount + '口' : '',
     gearWarning].filter(Boolean) : [];
   if (!result.fixed && warningCount) warnings.push('目標と警戒条件の両立を要確認');
