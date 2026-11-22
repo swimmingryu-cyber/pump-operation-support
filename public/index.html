@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0d1929">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>消防ポンプ運用支援 v0.9.7</title>
+  <title>消防ポンプ運用支援 v0.9.8</title>
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./style.css?v=097">
+  <link rel="stylesheet" href="./style.css?v=098">
 </head>
 <body>
   <main class="shell" id="main">
     <header class="top">
-      <strong>消防ポンプ運用支援 <small>v0.9.7</small></strong>
+      <strong>消防ポンプ運用支援 <small>v0.9.8</small></strong>
       <button id="flip" type="button" aria-pressed="false">⇄ 左右反転</button>
     </header>
     <div class="deck" id="deck">
@@ -61,6 +61,7 @@
     </div>
     <footer class="bottom">
       <span>概算支援・訓練用。吸水・ポンプ性能による送水可否は実機で確認してください。</span>
+      <button id="edit-quadra-settings" type="button">噴霧基準</button>
       <button id="reset" type="button">初期化</button>
     </footer>
   </main>
@@ -89,10 +90,24 @@
         <details><summary>分岐・放口を絞る</summary><div id="response-throttle"></div></details>
         <label><input type="checkbox"> 関係する筒先へ変更内容を共有</label>
         <label><input type="checkbox"> 変更後に関係する筒先の状態を確認</label>
-        <p class="hint">クアドラは0.60 MPa定格を仮定。実機の型式・定格を確認してください。</p>
+        <p class="hint" id="response-quadra-note" hidden></p>
       </div>
     </div>
   </dialog>
-  <script src="./app.js?v=097"></script>
+  <dialog class="overlay" id="quadra-settings" aria-labelledby="quadra-settings-title">
+    <form class="editor" id="quadra-settings-form">
+      <header><h2 id="quadra-settings-title">クアドラの噴霧基準</h2><button id="quadra-settings-close" type="button">閉じる</button></header>
+      <div class="options response-options">
+        <label>下限レンジ（L/min） <select id="quadra-range" required></select></label>
+        <label class="nozzle-ceiling">下限ノズル圧力（MPa） <input id="quadra-min-pressure" type="number" inputmode="decimal" min="0.01" step="0.01" required></label>
+        <p class="hint">初期値は屋内進入時の噴霧検証に基づく運用の目安です。L/minはダイヤルのレンジ表示です。</p>
+      </div>
+      <footer>
+        <button id="quadra-settings-defaults" type="button">初期値に戻す</button>
+        <button type="submit">保存</button>
+      </footer>
+    </form>
+  </dialog>
+  <script src="./app.js?v=098"></script>
 </body>
 </html>

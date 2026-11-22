@@ -6,6 +6,21 @@ const ports = [
 ];
 const storageKey = 'pump-v087';
 const elevations = [-30, -20, -10, 0, 10, 20, 30];
+const quadraRanges = [110, 230, 360, 470];
+// Operational criteria from local fog-use verification. Independent of the flow model.
+const defaultQuadraFogLimit = { range: 230, pressure: 0.5 };
+const quadraFlowReferencePressure = 0.6; // Provisional square-root estimate retained from earlier versions.
+
+function quadraFogLimit() {
+  const limit = data.quadraFogLimit;
+  return quadraRanges.includes(limit?.range) && Number.isFinite(limit.pressure) && limit.pressure >= 0.01
+    ? limit : defaultQuadraFogLimit;
+}
+
+function quadraLimitText() {
+  const { range, pressure } = quadraFogLimit();
+  return range + ' L/minレンジ・' + pressure.toFixed(2) + ' MPa';
+}
 const emptyBranch = () => ({ active: false, stopped: false, diam: 50, count: null, nozzle: null, setting: null, elevation: 0 });
 const emptyLine = () => ({ active: false, diam: 65, count: null, fork: null, branches: [emptyBranch(), emptyBranch()] });
 function migrateElevations(lines, legacyElevation) {
@@ -55,7 +70,7 @@ function qNozzle(b){if(!b.nozzle||!b.setting)return null;if(b.nozzle==='ダブ�
  const area=Math.PI*(d/1000)**2/4, v=(q/60000)/(0.95*area),p=1000*v*v/2/1e6;
  return {q,p,force:(q/60000)*1000*v};
 }const [rated,press]=b.setting.split('/').map(Number);if(!(rated>0&&press>0))return null;
- const q=rated*Math.sqrt(press/0.6);return {q,p:press,force:null};}
+ const q=rated*Math.sqrt(press/quadraFlowReferencePressure);return {q,p:press,force:null};}
 function hoseLoss(d,n,q){if(!(d>0&&n>=0&&q>=0))return 0;const area=Math.PI*(d/1000)**2/4,v=q/60000/area;return 0.025*(n*20)/(d/1000)*1000*v*v/2/1e6}
 
 const nozzleDiameters = [10, 13, 15, 19, 23, 26];
@@ -166,6 +181,14 @@ function outletWarnings(path, nozzle) {
   if (path.branch.maxPressure && nozzle.p > path.branch.maxPressure + 1e-9) {
     danger.push('設定上限 ' + pressureText(path.branch.maxPressure) + ' を超過');
   }
+  if (path.branch.nozzle === 'クアドラ') {
+    const limit = quadraFogLimit();
+    const range = Number(path.branch.setting.split('/')[0]);
+    if (range < limit.range) danger.push('噴霧の目安レンジ未満（' + limit.range + '以上）');
+    if (nozzle.p < limit.pressure - 1e-9) {
+      danger.push('噴霧の運用下限未満（' + limit.pressure.toFixed(2) + ' MPa）');
+    }
+  }
   if (nozzle.p - path.target.p >= 0.0005) notes.push('目標圧力超過');
   if (path.target.q - nozzle.q >= 0.5) notes.push('目標流量未達');
   return { danger, notes };
@@ -202,6 +225,8 @@ function responseSummary(container, solution, model) {
 
 function openResponses(model) {
   const { baseline, candidate, reference, paths, lines } = model;
+  $('response-quadra-note').hidden = !paths.some(path => path.branch.nozzle === 'クアドラ');
+  $('response-quadra-note').textContent = 'クアドラ噴霧の運用下限 ' + quadraLimitText() + ' ／ 流量は暫定推定';
   const original = $('response-original');
   const warnings = paths.flatMap(path => {
     const status = outletWarnings(path, baseline.nozzles[path.id]);
@@ -359,7 +384,7 @@ function render() {
         () => startEdit(index, branchIndex), label + 'の' + name + (branch.active ? 'を編集' : 'を追加'));
       if (branch.active) {
         const details = document.createElement('small');
-        details.textContent = [line.fork && `${branch.diam} mm × ${branch.count}本`, branch.nozzle, branch.setting].filter(Boolean).join('・');
+        details.textContent = [line.fork && `${branch.diam} mm × ${branch.count}本`, branch.nozzle === 'クアドラ' ? 'クアドラ（噴霧）' : branch.nozzle, branch.setting].filter(Boolean).join('・');
         edit.append(details);
         if (branch.elevation) {
           const elevation = document.createElement('small');
@@ -476,7 +501,7 @@ function showPreviousLayout(line, index) {
       const [range, value] = branch.setting.split('/');
       details.push(branch.nozzle === 'ダブコン'
         ? 'ダブコン ' + range + ' mm・目標 ' + value + ' L/min'
-        : 'クアドラ ' + range + ' L/minレンジ・目標 ' + value + ' MPa');
+        : 'クアドラ（噴霧） ' + range + ' L/minレンジ・目標 ' + value + ' MPa');
     } else details.push('筒先設定なし');
     details.push('高低差 ' + elevationLabel(branch.elevation ?? 0));
     if (branch.maxPressure) details.push('圧力上限 ' + pressureText(branch.maxPressure));
@@ -628,13 +653,55 @@ ceiling.oninput = () => { b.maxPressure = ceiling.valueAsNumber || null; };
 ceilingLabel.append(ceiling);
 o.append(ceilingLabel);
 if(b.nozzle==='ダブコン'){o.append(text('口径（mm）'));const g=grid(6);for(const d of nozzleDiameters)g.append(choice(d+'',()=>{partialDiameter=d;draw()},partialDiameter===d));o.append(g,text('流量（L/min）／400を超えると注意。保持限界は流量だけでは決められません。'));const f=grid(5);for(const q of [300,400,500,600,700,800,900,1000,1100,1200])f.append(choice(q+'',()=>{if(partialDiameter===null)return;b.setting=partialDiameter+'/'+q;finish()},false,q>400?'caution':''));o.append(f,text(partialDiameter===null?'先に口径を選択してください':'流量を選ぶと設定を保存します。反動力は概算で別途警告します。'))}
-else{const g=grid(4);o.append(text('公称流量レンジ（L/min）'));for(const q of [110,230,360,470])g.append(choice(q+'',()=>{partialFlow=q;draw()},partialFlow===q));o.append(g,text('ノズル圧力（MPa）'));const h=grid(3);for(const p of [0.5,0.6,0.7])h.append(choice(p.toFixed(1),()=>{if(partialFlow===null)return;b.setting=partialFlow+'/'+p;finish()}));o.append(h,text(partialFlow===null?'先に流量レンジを選択してください':'流量は0.6MPaを基準とした平方根則で概算します。'))}}
+else {
+  const limit = quadraFogLimit();
+  const ranges = grid(4);
+  for (const range of quadraRanges) {
+    ranges.append(choice(String(range), () => { partialFlow = range; draw(); },
+      partialFlow === range, range < limit.range ? 'caution' : ''));
+  }
+  const pressures = [...new Set([0.5, 0.6, 0.7, limit.pressure])].sort((a, b) => a - b);
+  const targets = grid(pressures.length);
+  for (const pressure of pressures) {
+    const button = choice(pressure.toFixed(2), () => {
+      if (partialFlow === null) return;
+      b.setting = partialFlow + '/' + pressure;
+      finish();
+    }, false, pressure < limit.pressure ? 'caution' : '');
+    button.disabled = partialFlow === null;
+    targets.append(button);
+  }
+  o.append(text('噴霧の流量レンジ（L/min）'), ranges, text('目標ノズル圧力（MPa）'), targets,
+    text('運用下限 ' + quadraLimitText() + ' ／ 流量は暫定推定'));
+}}
 }
 $('recalculate-pressure').onclick = () => {
   data.fixedPressure = null;
   save();
 };
 $('response-close').onclick = () => $('response').close();
+const quadraDialog = $('quadra-settings');
+const quadraRangeInput = $('quadra-range');
+const quadraPressureInput = $('quadra-min-pressure');
+quadraRangeInput.replaceChildren(...quadraRanges.map(range => new Option(String(range), String(range))));
+$('edit-quadra-settings').onclick = () => {
+  const limit = quadraFogLimit();
+  quadraRangeInput.value = limit.range;
+  quadraPressureInput.value = limit.pressure;
+  quadraDialog.showModal();
+};
+$('quadra-settings-close').onclick = () => quadraDialog.close();
+$('quadra-settings-defaults').onclick = () => {
+  quadraRangeInput.value = defaultQuadraFogLimit.range;
+  quadraPressureInput.value = defaultQuadraFogLimit.pressure;
+};
+$('quadra-settings-form').onsubmit = event => {
+  event.preventDefault();
+  if (!event.currentTarget.reportValidity()) return;
+  data.quadraFogLimit = { range: Number(quadraRangeInput.value), pressure: quadraPressureInput.valueAsNumber };
+  save();
+  quadraDialog.close();
+};
 save();
 
 document.querySelectorAll('[data-port]').forEach(button => {
@@ -659,6 +726,7 @@ $('overlay').addEventListener('close', () => {
 });
 $('reset').onclick = () => {
   if (!confirm('すべての設定を初期化しますか？')) return;
+  delete data.quadraFogLimit;
   Object.assign(data, { flipped: false, fixedPressure: null, lines: ports.map(emptyLine) });
   save();
 };
