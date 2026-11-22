@@ -8,6 +8,7 @@ const storageKey = 'pump-v087';
 const elevations = [-30, -20, -10, 0, 10, 20, 30];
 const pressurePerMetre = 0.00980665;
 const suctionHeights = Array.from({ length: 21 }, (_, index) => index / 2);
+const parallelSuctionNote = '吸管2本の効果試算は未実装';
 const equipmentTypes = {
   50: '50 mmホース', 65: '65 mmホース',
   fork: '分岐金具', coupling: '結合金具'
@@ -274,7 +275,9 @@ function waterSupplyCheck(result) {
     ? '吸水 ' + height + ' m ／ 吸上げ分 ' + pressureText(lift)
       + (result.p > 0 ? ' ／ ポンプ差圧の目安 ' + pressureText(result.p + lift) + '（吸管損失除く）' : '')
     : '吸水高さ未設定';
-  return { label: '無圧水利', shortage: false, summary: summary + ' ／ ' + pipes + ' ／ 送水可否は要確認' };
+  return { label: '無圧水利', shortage: false,
+    summary: [summary, pipes, count === 2 ? parallelSuctionNote : '', '送水可否は要確認']
+      .filter(Boolean).join(' ／ ') };
 }
 
 function pumpWarnings(result) {
@@ -856,6 +859,11 @@ const waterDialog = $('water-settings');
 const waterSourceInput = $('water-source');
 const suctionInput = $('suction-height');
 const suctionCountInput = $('suction-count');
+const suctionCountNote = $('suction-count-note');
+suctionCountNote.textContent = parallelSuctionNote;
+suctionCountInput.onchange = () => {
+  suctionCountNote.hidden = suctionCountInput.value !== '2';
+};
 const hydrantInput = $('hydrant-flow');
 suctionInput.append(...suctionHeights.map(height => new Option(height + ' m', String(height))));
 const equipmentInputs = [...document.querySelectorAll('[data-equipment]')];
@@ -872,6 +880,7 @@ $('edit-water-settings').onclick = () => {
   waterSourceInput.value = waterSource();
   suctionInput.value = data.suctionHeight ?? '';
   suctionCountInput.value = data.suctionCount ?? '';
+  suctionCountInput.onchange();
   hydrantInput.value = data.hydrantFlow ?? '';
   for (const input of equipmentInputs) input.value = data.equipmentLimits?.[input.dataset.equipment] ?? '';
   updateWaterSourceFields();
