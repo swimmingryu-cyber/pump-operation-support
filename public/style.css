@@ -134,3 +134,9 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
   .pump {position:sticky;top:0}
 }
 .lines {grid-template-rows:repeat(4,minmax(44px,auto))}
+.line button .target-note { color: #ffcf74; }
+.nozzle-ceiling, .long-hose-entry { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.nozzle-ceiling input, .long-hose-entry input { width: 8em; min-height: 40px; font: inherit; }
+.long-hose-entry label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#response-original { max-height: 30dvh; overflow: auto; }
+.response-options dl { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
