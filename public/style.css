@@ -189,3 +189,5 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
 #preferences fieldset { display: grid; gap: 8px; margin: 0; min-width: 0; }
 #preferences label { display: grid; grid-template-columns: 1fr minmax(5rem, 9rem); gap: 8px; align-items: center; }
 #preferences input, #preferences select { min-width: 0; min-height: 44px; font: inherit; }
+
+.line button .mixed-estimate.output-changed { color: #b2d7bf; }
