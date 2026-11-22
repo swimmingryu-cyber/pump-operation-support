@@ -57,6 +57,124 @@ function qNozzle(b){if(!b.nozzle||!b.setting)return null;if(b.nozzle==='ダブ�
  const q=rated*Math.sqrt(press/0.6);return {q,p:press,force:null};}
 function hoseLoss(d,n,q){if(!(d>0&&n>=0&&q>=0))return 0;const area=Math.PI*(d/1000)**2/4,v=q/60000/area;return 0.025*(n*20)/(d/1000)*1000*v*v/2/1e6}
 
+const nozzleDiameters = [10, 13, 15, 19, 23, 26];
+const reactionReference = 200;
+
+function mixedModel(paths) {
+  if (paths.length !== 2) return null;
+  const entries = paths.map(path => {
+    const line = data.lines[path.index];
+    const branch = line.branches[path.branchIndex];
+    return { ...path, line, branch, target: qNozzle(branch),
+      name: ports[path.index].label + (line.fork ? '・筒先 ' + (path.branchIndex ? 'B' : 'A') : '・筒先') };
+  });
+  const quad = entries.find(entry => entry.branch.nozzle === 'クアドラ');
+  const double = entries.find(entry => entry.branch.nozzle === 'ダブコン');
+  if (!quad || !double) return null;
+  const shared = quad.index === double.index;
+  const branchLoss = entry => entry.line.fork ? hoseLoss(entry.branch.diam, entry.branch.count, 1) : 0;
+  const commonLoss = entry => hoseLoss(entry.line.diam, entry.line.count, 1);
+  const offset = entry => entry.elevation * 0.00980665 + (entry.line.fork && !shared ? 0.02 : 0);
+  const resistance = entry => branchLoss(entry) + (shared ? 0 : commonLoss(entry));
+  const quadHead = quad.target.p + resistance(quad) * quad.target.q ** 2 + offset(quad);
+  const originalDiameter = Number(double.branch.setting.split('/')[0]);
+
+  function estimate(diameter, throttle = false) {
+    const unit = qNozzle({ nozzle: 'ダブコン', setting: diameter + '/1' });
+    const coefficient = unit.p + resistance(double);
+    const required = offset(double) + coefficient * double.target.q ** 2;
+    const unadjusted = Math.sqrt(Math.max(0, quadHead - offset(double)) / coefficient);
+    if (throttle && unadjusted <= double.target.q + 1e-6) return null;
+    const q = throttle ? double.target.q : unadjusted;
+    const total = q + quad.target.q;
+    const p = quadHead + (shared ? 0.02 + commonLoss(quad) * total ** 2 : 0);
+    return { diameter, q, total, p, nozzlePressure: unit.p * q ** 2, force: unit.force * q ** 2,
+      valveLoss: quadHead - required };
+  }
+  return { quad, double, shared, originalDiameter, estimate, baseline: estimate(originalDiameter) };
+}
+
+function mixedWarnings(estimate) {
+  const messages = [];
+  if (estimate.force >= reactionReference) messages.push('反動力注意 ' + Math.round(estimate.force) + ' N（参考値200 N）');
+  if (estimate.p > 1.4 || estimate.total > 2000) messages.push('A-2級参考性能を超える可能性');
+  else if (estimate.p > 1.2 || estimate.total > 1600) messages.push('高負荷：ポンプ性能・吸水条件を確認');
+  if (estimate.p <= 0) messages.push('計算値が0 MPa以下：実測値を確認');
+  return messages;
+}
+const mixedPressure = value => value.toFixed(3) + ' MPa';
+const mixedFlow = value => Math.round(value) + ' L/min';
+
+function responseSummary(container, estimate, model) {
+  const rows = [
+    ['推定ポンプ圧力', mixedPressure(estimate.p)],
+    ['総送水量の目安', mixedFlow(estimate.total)],
+    ['ダブコン', mixedFlow(estimate.q) + ' ／ ' + mixedPressure(estimate.nozzlePressure)],
+    ['クアドラ', mixedFlow(model.quad.target.q) + ' ／ ' + mixedPressure(model.quad.target.p)],
+    ['ダブコン推定反動力', Math.round(estimate.force) + ' N']
+  ];
+  const list = document.createElement('dl');
+  for (const [key, value] of rows) {
+    const label = document.createElement('dt');
+    const result = document.createElement('dd');
+    label.textContent = key;
+    result.textContent = value;
+    list.append(label, result);
+  }
+  container.append(list);
+  const warnings = mixedWarnings(estimate);
+  if (warnings.length) {
+    const warning = document.createElement('p');
+    warning.className = 'danger';
+    warning.textContent = warnings.join(' ／ ');
+    container.append(warning);
+  }
+}
+function openResponses(model) {
+  const baseline = model.baseline;
+  const warnings = mixedWarnings(baseline);
+  const original = $('response-original');
+  original.classList.toggle('response-warning', warnings.length > 0);
+  original.textContent = '変更前：' + model.double.name + ' ' + mixedFlow(baseline.q)
+    + (warnings.length ? ' ／ ' + warnings.join(' ／ ') : ' ／ 目標 ' + mixedFlow(model.double.target.q));
+  const alternatives = $('response-diameters');
+  alternatives.replaceChildren();
+  const candidates = nozzleDiameters.filter(d => d !== model.originalDiameter).map(d => model.estimate(d));
+  candidates.sort((a, b) => Math.abs(a.q - model.double.target.q) - Math.abs(b.q - model.double.target.q));
+  const fit = document.createElement('p');
+  const meetsTargets = candidates.some(item => Math.abs(item.q - model.double.target.q) < 0.5 && mixedWarnings(item).length === 0);
+  fit.textContent = meetsTargets ? '表示精度内で目標に合う候補あり' : '目標と警戒値の両条件を満たす口径候補なし';
+  alternatives.append(fit);
+  for (const estimate of candidates) {
+    const item = document.createElement('details');
+    const heading = document.createElement('summary');
+    const delta = Math.round(estimate.q - model.double.target.q);
+    heading.textContent = estimate.diameter + ' mm ／ ' + mixedFlow(estimate.q)
+      + '（目標差 ' + (delta > 0 ? '+' : '') + delta + '）'
+      + (estimate.force >= reactionReference ? ' ／ 反動力注意' : '');
+    item.append(heading);
+    responseSummary(item, estimate, model);
+    alternatives.append(item);
+  }
+  const throttle = $('response-throttle');
+  throttle.replaceChildren();
+  const adjusted = model.estimate(model.originalDiameter, true);
+  if (adjusted) {
+    const location = document.createElement('p');
+    location.textContent = '調整対象：' + model.double.name + (model.double.line.fork ? '側の分岐' : 'の放口');
+    throttle.append(location);
+    responseSummary(throttle, adjusted, model);
+    const check = document.createElement('p');
+    check.textContent = '両筒先と連携し、実測値を確認。総送水量は照合の目安です。';
+    throttle.append(check);
+  } else {
+    throttle.textContent = 'クアドラ優先の条件ではダブコン側を絞る案は成立しません。';
+  }
+  $('response').querySelectorAll('.response-options > details').forEach(panel => panel.open = false);
+  $('response').querySelectorAll('input[type=checkbox]').forEach(input => input.checked = false);
+  $('response').showModal();
+}
+
 function calculate() {
   let total = 0;
   let missing = false;
@@ -85,7 +203,8 @@ function calculate() {
       + (line.fork ? 0.02 : 0);
     active.forEach(path => paths.push({ ...path, p: path.p + common }));
   });
-  return { ok: !missing, total, paths, forces, stopped: paths.length === 0,
+  const mixed = missing ? null : mixedModel(paths);
+  return { ok: !missing, mixed, total, paths, forces, stopped: paths.length === 0,
     p: paths.length ? Math.max(...paths.map(path => path.p)) : 0 };
 }
 function elevationLabel(value) {
@@ -130,6 +249,10 @@ function alignHoses() {
 
 function render() {
   const result = calculate();
+  const mixed = result.mixed;
+  $('respond').hidden = !mixed;
+  $('respond').onclick = mixed ? () => openResponses(mixed) : null;
+  $('pump-heading').textContent = mixed ? '推定ポンプ圧力（クアドラ優先）' : '概算必要吐出圧力';
   $('deck').classList.toggle('flipped', Boolean(data.flipped));
   $('flip').setAttribute('aria-pressed', String(Boolean(data.flipped)));
   const list = $('lines');
@@ -174,7 +297,23 @@ function render() {
         }
       }
       const path = result.paths.find(item => item.index === index && item.branchIndex === branchIndex);
-      if (path && isBasis(path, result)) {
+      if (path && mixed) {
+        const isDouble = index === mixed.double.index && branchIndex === mixed.double.branchIndex;
+        const estimate = document.createElement('small');
+        const baseline = mixed.baseline;
+        estimate.className = 'mixed-estimate';
+        if (isDouble) {
+          estimate.textContent = '推定 ' + mixedFlow(baseline.q) + ' ／ ' + mixedPressure(baseline.nozzlePressure);
+          estimate.classList.toggle('danger', baseline.force >= reactionReference);
+          const goal = document.createElement('small');
+          goal.textContent = '目標 ' + mixedFlow(mixed.double.target.q);
+          edit.append(goal);
+        } else {
+          estimate.textContent = '目標 ' + mixedPressure(mixed.quad.target.p) + ' ／ 推定 ' + mixedFlow(mixed.quad.target.q);
+        }
+        edit.append(estimate);
+      }
+      if (path && !mixed && isBasis(path, result)) {
         const basis = document.createElement('small');
         basis.textContent = '◆圧力基準ライン◆';
         basis.className = 'pressure-basis';
@@ -205,7 +344,7 @@ function render() {
  const pr=document.querySelector('.pressure');
  const paths = $('pressure-paths');
  paths.replaceChildren();
- $('pressure-details').hidden = !result.ok || result.stopped;
+ $('pressure-details').hidden = !result.ok || result.stopped || !!mixed;
  for (const path of result.paths) {
    const item = document.createElement('li');
    const line = data.lines[path.index];
@@ -219,8 +358,22 @@ function render() {
    pr.classList.remove('danger');
    $('total').textContent = '';
    $('alert').textContent = '';
+   $('alert').classList.remove('danger');
    return;
  }
+ if (mixed) {
+   const estimate = mixed.baseline;
+   const messages = mixedWarnings(estimate);
+   const delta = Math.round(estimate.q - mixed.double.target.q);
+   if (delta) messages.push('ダブコン目標差 ' + (delta > 0 ? '+' : '') + delta + ' L/min');
+   pr.textContent = mixedPressure(estimate.p);
+   pr.classList.toggle('danger', estimate.p > 1.4);
+   $('total').textContent = '推定総送水量：' + mixedFlow(estimate.total);
+   $('alert').textContent = messages.join(' ／ ');
+   $('alert').classList.toggle('danger', estimate.force >= reactionReference);
+   return;
+ }
+ $('alert').classList.remove('danger');
  const r=result;pr.classList.toggle('danger',r.ok&&!r.stopped&&r.p>1.4);
  pr.textContent=r.ok?(r.stopped?'放水停止':pressureLabel(r.p)):'— MPa';
  $('total').textContent=r.ok?`設定流量の合計：${Math.round(r.total)} L/min`:'設定未完了';
@@ -323,9 +476,10 @@ if (step === 0 || step === 2) {
 }
 else if(step===1){const g=grid(2);g.append(choice('分岐金具 あり',()=>{l.fork=true;l.branches[0].active=true;advance(2)}),choice('分岐金具 なし',()=>{l.fork=false;l.branches[0].active=true;l.branches[1]=emptyBranch();advance(3)}));o.append(g)}
 else if(step===3){const g=grid(2);for(const name of ['ダブコン','クアドラ'])g.append(choice(name,()=>{if(b.nozzle!==name)b.setting=null;b.nozzle=name;partialDiameter=b.setting&&name==='ダブコン'?Number(b.setting.split('/')[0]):null;partialFlow=b.setting&&name==='クアドラ'?Number(b.setting.split('/')[0]):null;advance(4)}));o.append(g)}
-else if(step===4){if(b.nozzle==='ダブコン'){o.append(text('口径（mm）'));const g=grid(6);for(const d of [10,13,15,19,23,26])g.append(choice(d+'',()=>{partialDiameter=d;draw()},partialDiameter===d));o.append(g,text('流量（L/min）／400を超えると注意。保持限界は流量だけでは決められません。'));const f=grid(5);for(const q of [300,400,500,600,700,800,900,1000,1100,1200])f.append(choice(q+'',()=>{if(partialDiameter===null)return;b.setting=partialDiameter+'/'+q;finish()},false,q>400?'caution':''));o.append(f,text(partialDiameter===null?'先に口径を選択してください':'流量を選ぶと設定を保存します。反動力は概算で別途警告します。'))}
+else if(step===4){if(b.nozzle==='ダブコン'){o.append(text('口径（mm）'));const g=grid(6);for(const d of nozzleDiameters)g.append(choice(d+'',()=>{partialDiameter=d;draw()},partialDiameter===d));o.append(g,text('流量（L/min）／400を超えると注意。保持限界は流量だけでは決められません。'));const f=grid(5);for(const q of [300,400,500,600,700,800,900,1000,1100,1200])f.append(choice(q+'',()=>{if(partialDiameter===null)return;b.setting=partialDiameter+'/'+q;finish()},false,q>400?'caution':''));o.append(f,text(partialDiameter===null?'先に口径を選択してください':'流量を選ぶと設定を保存します。反動力は概算で別途警告します。'))}
 else{const g=grid(4);o.append(text('公称流量レンジ（L/min）'));for(const q of [110,230,360,470])g.append(choice(q+'',()=>{partialFlow=q;draw()},partialFlow===q));o.append(g,text('ノズル圧力（MPa）'));const h=grid(3);for(const p of [0.5,0.6,0.7])h.append(choice(p.toFixed(1),()=>{if(partialFlow===null)return;b.setting=partialFlow+'/'+p;finish()}));o.append(h,text(partialFlow===null?'先に流量レンジを選択してください':'流量は0.6MPaを基準とした平方根則で概算します。'))}}
 }
+$('response-close').onclick = () => $('response').close();
 save();
 
 document.querySelectorAll('[data-port]').forEach(button => {

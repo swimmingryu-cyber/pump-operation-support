@@ -119,3 +119,18 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
   }
   .branch-hose-step .editor h2 { font-size: clamp(15px, 2.5vw, 20px); }
 }
+.line button .mixed-estimate {font-weight:700; overflow-wrap:normal}
+.line button .mixed-estimate.danger, .alarm.danger {color:#ff9b9b}
+#response-original, .response-options details {padding:8px 10px;border:1px solid #6885a3;border-radius:8px}
+#response-original.response-warning {background:#742530;border-color:#ef8888;color:#fff}
+.response-options summary {cursor:pointer;font-weight:700;padding-block:4px}
+#response-diameters details {margin-top:5px}
+.response-options dl {display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin:8px 0}
+.response-options dd {margin:0;text-align:right}
+#respond {justify-self:start}
+@media (orientation: landscape) {
+  .shell {height:100dvh}
+  .deck {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+  .pump {position:sticky;top:0}
+}
+.lines {grid-template-rows:repeat(4,minmax(44px,auto))}
