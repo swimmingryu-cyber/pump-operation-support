@@ -20,7 +20,7 @@ const quadraRanges = [110, 230, 360, 470];
 const defaultQuadraFogLimit = { range: 230, pressure: 0.5 };
 // NH-50QF nominal dial flow is specified at 0.70 MPa. Other pressures remain estimates.
 const quadraFlowReferencePressure = 0.7;
-const pressureModel = 'quadra-reference-0.70';
+const pressureModel = 'quadra-priority-0.70';
 const quadraFlowNote = 'NH-50QF：0.70 MPaでレンジ表示流量。その他の圧力では流量は概算';
 
 function quadraFogLimit() {
@@ -141,8 +141,6 @@ function calculate() {
     baseline: fixed && !missing ? atPressure([], data.fixedPressure) : null
   };
 
-  // Each outlet has a minimum pressure at the pump for its target to be met.
-  // The highest minimum covers all active outlets with the valves fully open.
   const reference = pressureReference(lines, paths);
   const candidate = solve(lines, reference);
   return { ok: true, stopped: false, paths, lines, reference, fixed, candidate,
@@ -163,7 +161,10 @@ function requiredPressure(lines, reference, adjustedId) {
 }
 
 function pressureReference(lines, paths) {
-  return paths.reduce((best, path) =>
+  const quadra = paths.filter(path => path.branch.nozzle === 'クアドラ');
+  const candidates = quadra.length ? quadra : paths;
+  // Compare pump-side requirements, including the loss on each line.
+  return candidates.reduce((best, path) =>
     requiredPressure(lines, path) > requiredPressure(lines, best) ? path : best);
 }
 
@@ -491,7 +492,10 @@ function render() {
   $('respond').hidden = !result.reference;
   $('respond').onclick = result.reference ? () => openResponses(result) : null;
   $('recalculate-pressure').hidden = !result.fixed;
-  $('pump-heading').textContent = result.fixed ? '変更前の計算圧を据え置き（試算）' : '必要吐出圧力（推定）';
+  const quadraPriority = result.reference?.branch.nozzle === 'クアドラ';
+  $('pump-heading').textContent = result.fixed ? '変更前の計算圧を据え置き（試算）'
+    : quadraPriority ? '必要吐出圧力（クアドラ基準・推定）' : '必要吐出圧力（推定）';
+  $('pressure-preview-basis').textContent = quadraPriority ? '（クアドラ基準）' : '';
   const preview = $('pressure-preview');
   preview.hidden = !result.fixed || !result.candidate;
   $('pressure-preview-values').replaceChildren();
@@ -643,47 +647,8 @@ function updateLayout() {
   alignHoses();
 }
 function closeOverlay() { $('overlay').close(); }
-function showPreviousLayout(line, index) {
-  const panel = $('previous-layout');
-  panel.hidden = !line.active;
-  const nozzles = $('previous-nozzles');
-  nozzles.replaceChildren();
-  if (panel.hidden) return;
-
-  const hose = (part) => part.diam + ' mm × ' + (part.count ?? '—') + '本';
-  $('previous-main').textContent = ports[index].label + ' ／ ' + (line.fork ? '分岐前 ' : '')
-    + hose(line) + ' ／ ' + (line.fork ? '分岐あり' : '直結');
-  const branches = line.fork ? line.branches : line.branches.slice(0, 1);
-  branches.forEach((branch, branchIndex) => {
-    const item = document.createElement('li');
-    const name = document.createElement('strong');
-    name.textContent = line.fork ? (branchIndex === 0 ? '筒先 A' : '筒先 B') : '筒先';
-    item.append(name);
-    if (!branch.active) {
-      item.append(' ／ 未設定');
-      nozzles.append(item);
-      return;
-    }
-
-    const details = [];
-    if (line.fork) details.push(hose(branch));
-    if (branch.setting) {
-      const [range, value] = branch.setting.split('/');
-      details.push(branch.nozzle === 'ダブコン'
-        ? 'ダブコン ' + range + ' mm・目標 ' + value + ' L/min'
-        : 'クアドラ（噴霧） ' + range + ' L/minレンジ・目標 ' + value + ' MPa');
-    } else details.push('筒先設定なし');
-    details.push('高低差 ' + elevationLabel(branch.elevation ?? 0));
-    if (branch.maxPressure) details.push('圧力上限 ' + pressureText(branch.maxPressure));
-    if (branch.stopped) details.push('停止中');
-    item.append(' ／ ' + details.join(' ／ '));
-    nozzles.append(item);
-  });
-}
-
 function startEdit(index, branchIndex = null) {
   const line = data.lines[index];
-  showPreviousLayout(line, index);
   ctx = { i: index, j: branchIndex, draft: structuredClone(line) };
   step = branchIndex === null ? 0 : line.fork ? 2 : 3;
   $('delete').hidden = !line.active || branchIndex !== null;
@@ -700,18 +665,46 @@ function back() {
   draw();
 }
 function advance(next) { step = next; draw(); }
+function flowingOutletCount(line) {
+  if (!line.active) return 0;
+  const branches = line.fork ? line.branches : line.branches.slice(0, 1);
+  return branches.filter(branch => branch.active && !branch.stopped && branch.setting).length;
+}
+
 function finish() {
   const ceiling = $('nozzle-ceiling');
   if (ceiling && !ceiling.reportValidity()) return;
   if (ceiling) ctx.draft.branches[ctx.j ?? 0].maxPressure = ceiling.valueAsNumber || null;
   ctx.draft.active = true;
   ctx.draft.branches[ctx.j ?? 0].active = true;
-  holdDisplayedPressure();
+  const previous = data.lines[ctx.i];
+  if (flowingOutletCount(ctx.draft) > flowingOutletCount(previous)) {
+    data.fixedPressure = null;
+    legacyHoldCleared = false;
+  } else {
+    holdDisplayedPressure();
+  }
   data.lines[ctx.i] = ctx.draft;
   save();
   closeOverlay();
 }
-function choice(label,cb,sel=false,cls=''){const b=document.createElement('button');b.textContent=label;b.className=(sel?'selected ':'')+cls;b.onclick=cb;return b}
+function choice(label, handler, selected = null, className = '') {
+  const button = control(label, handler);
+  if (className) button.classList.add(className);
+  if (selected !== null) button.setAttribute('aria-pressed', String(selected));
+  return button;
+}
+
+function updateSelectedField(field) {
+  if (field.matches('select, input[type=number]')) {
+    field.classList.toggle('selected', field.value !== '' && field.validity.valid);
+  }
+}
+
+for (const id of ['overlay', 'quadra-settings', 'water-settings']) {
+  $(id).addEventListener('input', event => updateSelectedField(event.target));
+  $(id).addEventListener('change', event => updateSelectedField(event.target));
+}
 function grid(n){const d=document.createElement('div');d.className='choices '+({2:'two',3:'three',4:'four',5:'five',6:'six'}[n]);return d}
 function text(s){const d=document.createElement('div');d.className='hint';d.textContent=s;return d}
 function elevationControl(branch, canSave) {
@@ -730,7 +723,6 @@ function elevationControl(branch, canSave) {
       if (canSave) finish();
       else draw();
     }, selected);
-    button.setAttribute('aria-pressed', String(selected));
     choices.append(button);
   }
   group.append(label, choices, text('ポンプより高い場合は＋、低い場合は−'));
@@ -766,6 +758,7 @@ function hoseControls(target, nextStep, allowLong) {
     input.step = '1';
     input.required = true;
     if (target.count >= 11) input.value = target.count;
+    updateSelectedField(input);
     const apply = document.createElement('button');
     apply.type = 'submit';
     apply.textContent = '決定';
@@ -806,8 +799,8 @@ if ((l.fork && step === 2) || (!l.fork && step === 3)) {
 if (step === 0 || step === 2) {
   o.append(hoseControls(step === 0 ? l : b, step === 0 ? 1 : 3, step === 0));
 }
-else if(step===1){const g=grid(2);g.append(choice('分岐金具 あり',()=>{l.fork=true;l.branches[0].active=true;advance(2)}),choice('分岐金具 なし',()=>{l.fork=false;l.branches[0].active=true;l.branches[1]=emptyBranch();advance(3)}));o.append(g)}
-else if(step===3){const g=grid(2);for(const name of ['ダブコン','クアドラ'])g.append(choice(name,()=>{if(b.nozzle!==name){b.setting=null;b.maxPressure=null;}b.nozzle=name;partialDiameter=b.setting&&name==='ダブコン'?Number(b.setting.split('/')[0]):null;partialFlow=b.setting&&name==='クアドラ'?Number(b.setting.split('/')[0]):null;advance(4)}));o.append(g)}
+else if(step===1){const g=grid(2);g.append(choice('分岐金具 あり',()=>{l.fork=true;l.branches[0].active=true;advance(2)},l.fork===true),choice('分岐金具 なし',()=>{l.fork=false;l.branches[0].active=true;l.branches[1]=emptyBranch();advance(3)},l.fork===false));o.append(g)}
+else if(step===3){const g=grid(2);for(const name of ['ダブコン','クアドラ'])g.append(choice(name,()=>{if(b.nozzle!==name){b.setting=null;b.maxPressure=null;}b.nozzle=name;partialDiameter=b.setting&&name==='ダブコン'?Number(b.setting.split('/')[0]):null;partialFlow=b.setting&&name==='クアドラ'?Number(b.setting.split('/')[0]):null;advance(4)},b.nozzle===name));o.append(g)}
 else if(step===4){
 const ceilingLabel = document.createElement('label');
 ceilingLabel.className = 'nozzle-ceiling';
@@ -819,10 +812,29 @@ ceiling.inputMode = 'decimal';
 ceiling.min = '0.001';
 ceiling.step = 'any';
 ceiling.value = b.maxPressure ?? '';
+updateSelectedField(ceiling);
 ceiling.oninput = () => { b.maxPressure = ceiling.valueAsNumber || null; };
 ceilingLabel.append(ceiling);
 o.append(ceilingLabel);
-if(b.nozzle==='ダブコン'){o.append(text('口径（mm）'));const g=grid(6);for(const d of nozzleDiameters)g.append(choice(d+'',()=>{partialDiameter=d;draw()},partialDiameter===d));o.append(g,text('流量（L/min）／400を超えると注意。保持限界は流量だけでは決められません。'));const f=grid(5);for(const q of [300,400,500,600,700,800,900,1000,1100,1200])f.append(choice(q+'',()=>{if(partialDiameter===null)return;b.setting=partialDiameter+'/'+q;finish()},false,q>400?'caution':''));o.append(f,text(partialDiameter===null?'先に口径を選択してください':'流量を選ぶと設定を保存します。反動力は概算で別途警告します。'))}
+const [, savedValue] = (b.setting ?? '').split('/').map(Number);
+if (b.nozzle === 'ダブコン') {
+  const diameters = grid(6);
+  for (const diameter of nozzleDiameters) {
+    diameters.append(choice(String(diameter), () => { partialDiameter = diameter; draw(); },
+      partialDiameter === diameter));
+  }
+  const flows = grid(5);
+  for (const flow of [300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]) {
+    const button = choice(String(flow), () => {
+      b.setting = partialDiameter + '/' + flow;
+      finish();
+    }, flow === savedValue, flow > 400 ? 'caution' : '');
+    button.disabled = partialDiameter === null;
+    flows.append(button);
+  }
+  o.append(text('口径（mm）'), diameters, text('流量（L/min）／400を超えると注意。保持限界は流量だけでは決められません。'),
+    flows, text(partialDiameter === null ? '先に口径を選択してください' : '流量を選ぶと設定を保存します。反動力は概算で別途警告します。'));
+}
 else {
   const limit = quadraFogLimit();
   const ranges = grid(4);
@@ -830,14 +842,14 @@ else {
     ranges.append(choice(String(range), () => { partialFlow = range; draw(); },
       partialFlow === range, range < limit.range ? 'caution' : ''));
   }
-  const pressures = [...new Set([0.5, 0.6, 0.7, limit.pressure])].sort((a, b) => a - b);
+  const pressures = [...new Set([0.5, 0.6, 0.7, limit.pressure, savedValue].filter(Number.isFinite))].sort((a, b) => a - b);
   const targets = grid(pressures.length);
   for (const pressure of pressures) {
     const button = choice(pressure.toFixed(2), () => {
       if (partialFlow === null) return;
       b.setting = partialFlow + '/' + pressure;
       finish();
-    }, false, pressure < limit.pressure ? 'caution' : '');
+    }, pressure === savedValue, pressure < limit.pressure ? 'caution' : '');
     button.disabled = partialFlow === null;
     targets.append(button);
   }
@@ -858,12 +870,14 @@ $('edit-quadra-settings').onclick = () => {
   const limit = quadraFogLimit();
   quadraRangeInput.value = limit.range;
   quadraPressureInput.value = limit.pressure;
+  [quadraRangeInput, quadraPressureInput].forEach(updateSelectedField);
   quadraDialog.showModal();
 };
 $('quadra-settings-close').onclick = () => quadraDialog.close();
 $('quadra-settings-defaults').onclick = () => {
   quadraRangeInput.value = defaultQuadraFogLimit.range;
   quadraPressureInput.value = defaultQuadraFogLimit.pressure;
+  [quadraRangeInput, quadraPressureInput].forEach(updateSelectedField);
 };
 $('quadra-settings-form').onsubmit = event => {
   event.preventDefault();
@@ -901,6 +915,7 @@ $('edit-water-settings').onclick = () => {
   hydrantInput.value = data.hydrantFlow ?? '';
   for (const input of equipmentInputs) input.value = data.equipmentLimits?.[input.dataset.equipment] ?? '';
   updateWaterSourceFields();
+  [waterSourceInput, suctionInput, suctionCountInput, hydrantInput, ...equipmentInputs].forEach(updateSelectedField);
   waterDialog.showModal();
 };
 $('water-settings-close').onclick = () => waterDialog.close();

@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0d1929">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>消防ポンプ運用支援 v0.9.14</title>
+  <title>消防ポンプ運用支援 v0.9.15</title>
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./style.css?v=0914">
+  <link rel="stylesheet" href="./style.css?v=0915">
 </head>
 <body>
   <main class="shell" id="main">
     <header class="top">
-      <strong>消防ポンプ運用支援 <small>v0.9.14</small></strong>
+      <strong>消防ポンプ運用支援 <small>v0.9.15</small></strong>
       <button id="flip" type="button" aria-pressed="false">⇄ 左右反転</button>
     </header>
     <div class="deck" id="deck">
@@ -47,7 +47,7 @@
           <div id="total"></div>
           <div id="supply-estimate" class="hint"></div>
           <details id="pressure-preview" hidden>
-            <summary>変更後の必要圧力 <strong id="pressure-preview-value"></strong> <span id="pressure-preview-warning" class="alarm" role="status"></span></summary>
+            <summary>変更後の必要圧力<span id="pressure-preview-basis"></span> <strong id="pressure-preview-value"></strong> <span id="pressure-preview-warning" class="alarm" role="status"></span></summary>
             <div id="pressure-preview-values"></div>
           </details>
           <details id="pressure-details">
@@ -77,13 +77,6 @@
     <div class="editor">
       <header><h2 id="title">設定</h2><button id="close" type="button">閉じる</button></header>
       <div class="options" id="options"></div>
-      <section id="previous-layout" class="previous-layout" aria-labelledby="previous-layout-title" hidden>
-        <h3 id="previous-layout-title">変更前の付設状況</h3>
-        <div class="previous-layout-map">
-          <p id="previous-main" class="previous-main"></p>
-          <ul id="previous-nozzles" class="previous-nozzles"></ul>
-        </div>
-      </section>
       <footer><button id="delete" type="button" class="delete" hidden>ラインを削除</button><button id="back" type="button">← 戻る</button><span class="hint">選択後、次へ進みます</span></footer>
     </div>
   </dialog>
@@ -147,6 +140,6 @@
       <footer><button type="submit">保存</button></footer>
     </form>
   </dialog>
-  <script src="./app.js?v=0914"></script>
+  <script src="./app.js?v=0915"></script>
 </body>
 </html>

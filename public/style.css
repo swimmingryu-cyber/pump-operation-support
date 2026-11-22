@@ -4,7 +4,7 @@ body { margin: 0; font: 14px/1.35 system-ui, sans-serif; background: #0d1929; co
 [hidden] { display: none !important; }
 button { color: inherit; font: inherit; border: 1px solid #6885a3; border-radius: 8px; background: #203a55; padding: 4px 8px; min-height: 44px; cursor: pointer; }
 button:focus-visible { outline: 3px solid #ffdb65; outline-offset: 1px; }
-button.selected, button[aria-pressed=true] { background: #285977; border-color: #a4e4ff; }
+button[aria-pressed=true], select.selected, input.selected { background: #285977; border-color: #a4e4ff; }
 .shell { min-height: 100dvh; display: flex; flex-direction: column; gap: 6px; padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); }
 .top, .bottom, .editor header, .editor footer { display: flex; align-items: center; gap: 6px; }
 .top { flex-wrap: wrap; }
@@ -143,34 +143,6 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
 #response-original { max-height: 30dvh; overflow: auto; }
 .response-options dl { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
 
-.previous-layout {
-  max-height: 30dvh;
-  overflow: auto;
-  flex-shrink: 0;
-  padding: 4px 6px;
-  border: 1px solid #46617d;
-  border-radius: 7px;
-  background: #172d46;
-  color: #d3e3f3;
-  font-size: 12px;
-}
-.previous-layout h3 { margin: 0 0 3px; font-size: inherit; }
-.previous-layout-map {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  align-items: center;
-  gap: 4px;
-}
-.previous-main, .previous-nozzles li {
-  padding: 2px 5px;
-  border-left: 2px solid #6bd4fa;
-  background: #203a55;
-  overflow-wrap: anywhere;
-}
-.previous-nozzles { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-@media (max-width: 400px) {
-  .previous-layout-map { grid-template-columns: 1fr; }
-}
 #pressure-preview { padding: 3px; border: 1px solid #6885a3; border-radius: 6px; }
 #pressure-preview summary { cursor: pointer; }
 #pressure-preview-values dl { margin: 3px 0; }
