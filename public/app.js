@@ -18,7 +18,10 @@ const equipmentPressureReferences = { 50: 1.3, 65: 1.3, fork: 0.7, coupling: 1.3
 const quadraRanges = [110, 230, 360, 470];
 // Operational criteria from local fog-use verification. Independent of the flow model.
 const defaultQuadraFogLimit = { range: 230, pressure: 0.5 };
-const quadraFlowReferencePressure = 0.6; // Provisional square-root estimate retained from earlier versions.
+// NH-50QF nominal dial flow is specified at 0.70 MPa. Other pressures remain estimates.
+const quadraFlowReferencePressure = 0.7;
+const pressureModel = 'quadra-reference-0.70';
+const quadraFlowNote = 'NH-50QF：0.70 MPaでレンジ表示流量。その他の圧力では流量は概算';
 
 function quadraFogLimit() {
   const limit = data.quadraFogLimit;
@@ -43,11 +46,19 @@ function migrateElevations(lines, legacyElevation) {
     }))
   }));
 }
+let legacyHoldCleared = false;
 function load() {
   const initial = { flipped: false, lines: ports.map(emptyLine) };
   try {
     const current = JSON.parse(localStorage.getItem(storageKey));
-    if (current?.lines?.length === ports.length) return current;
+    if (current?.lines?.length === ports.length) {
+      if (current.fixedPressure > 0 && current.fixedPressureModel !== pressureModel) {
+        // The previous layout used to calculate the held pressure is no longer available.
+        current.fixedPressure = null;
+        legacyHoldCleared = true;
+      }
+      return current;
+    }
     const previous = JSON.parse(localStorage.getItem('pump-v085'));
     if (previous?.lines?.length === ports.length) {
       return { flipped: Boolean(previous.flipped), lines: migrateElevations(previous.lines, previous.backpressure) };
@@ -71,6 +82,7 @@ let ctx = null, step = 0, partialDiameter = null, partialFlow = null;
 const $ = id => document.getElementById(id);
 function save() {
   if (!data.lines.some(line => line.active)) data.fixedPressure = null;
+  if (data.fixedPressure == null) delete data.fixedPressureModel;
   try { localStorage.setItem(storageKey, JSON.stringify(data)); } catch {}
   render();
 }
@@ -344,7 +356,7 @@ function responseSummary(container, solution, model) {
 function openResponses(model) {
   const { baseline, candidate, reference, paths, lines } = model;
   $('response-quadra-note').hidden = !paths.some(path => path.branch.nozzle === 'クアドラ');
-  $('response-quadra-note').textContent = 'クアドラ噴霧の運用下限 ' + quadraLimitText() + ' ／ 流量は暫定推定';
+  $('response-quadra-note').textContent = 'クアドラ噴霧の運用下限 ' + quadraLimitText() + ' ／ ' + quadraFlowNote;
   const original = $('response-original');
   const outletStatuses = paths.map(path => ({
     name: path.name,
@@ -459,7 +471,11 @@ function alignHoses() {
 
 function holdDisplayedPressure() {
   const before = calculate();
-  if (!before.fixed && before.baseline?.p > 0) data.fixedPressure = before.baseline.p;
+  if (!before.fixed && before.baseline?.p > 0) {
+    data.fixedPressure = before.baseline.p;
+    data.fixedPressureModel = pressureModel;
+    legacyHoldCleared = false;
+  }
 }
 
 function toggleNozzle(branch) {
@@ -471,6 +487,7 @@ function toggleNozzle(branch) {
 function render() {
   const result = calculate();
   const baseline = result.baseline;
+  $('pressure-model-notice').hidden = !legacyHoldCleared;
   $('respond').hidden = !result.reference;
   $('respond').onclick = result.reference ? () => openResponses(result) : null;
   $('recalculate-pressure').hidden = !result.fixed;
@@ -825,7 +842,7 @@ else {
     targets.append(button);
   }
   o.append(text('噴霧の流量レンジ（L/min）'), ranges, text('目標ノズル圧力（MPa）'), targets,
-    text('運用下限 ' + quadraLimitText() + ' ／ 流量は暫定推定'));
+    text('運用下限 ' + quadraLimitText() + ' ／ ' + quadraFlowNote));
 }}
 }
 $('recalculate-pressure').onclick = () => {
@@ -925,6 +942,7 @@ $('overlay').addEventListener('close', () => {
 });
 $('reset').onclick = () => {
   if (!confirm('すべての設定を初期化しますか？')) return;
+  legacyHoldCleared = false;
   delete data.quadraFogLimit;
   delete data.waterSource;
   delete data.suctionHeight;
