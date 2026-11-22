@@ -98,12 +98,17 @@ function calculate() {
       fork: line.fork
     });
   });
-  if (missing || !paths.length) return { ok: !missing, paths: [], stopped: !missing };
+  const fixed = Number.isFinite(data.fixedPressure) && data.fixedPressure > 0;
+  if (missing || !paths.length) return {
+    ok: !missing, paths: [], stopped: !missing, fixed,
+    baseline: fixed && !missing ? atPressure([], data.fixedPressure) : null
+  };
 
   const priority = paths.filter(path => path.branch.nozzle === 'クアドラ');
   const reference = (priority.length ? priority : paths).reduce((best, path) =>
     requiredPressure(lines, path) > requiredPressure(lines, best) ? path : best);
-  return { ok: true, stopped: false, paths, lines, reference, baseline: solve(lines, reference) };
+  return { ok: true, stopped: false, paths, lines, reference, fixed,
+    baseline: fixed ? atPressure(lines, data.fixedPressure) : solve(lines, reference) };
 }
 
 function outletFlow(path, head) {
@@ -120,7 +125,10 @@ function requiredPressure(lines, reference, adjustedId) {
 }
 
 function solve(lines, reference, adjustedId = null) {
-  const p = requiredPressure(lines, reference, adjustedId);
+  return atPressure(lines, requiredPressure(lines, reference, adjustedId), adjustedId);
+}
+
+function atPressure(lines, p, adjustedId = null) {
   const nozzles = [];
   for (const line of lines) {
     // At a common supply pressure, the flow through the main hose is the sum of its branches.
@@ -231,7 +239,7 @@ function openResponses(model) {
 
     const throttle = $('response-throttle');
     throttle.replaceChildren();
-    const adjusted = selected.id !== reference.id && baseline.nozzles[selected.id].q > selected.target.q + 0.01
+    const adjusted = selected.id !== reference.id
       ? solve(lines, reference, selected.id) : null;
     if (adjusted && adjusted.nozzles[selected.id].available > selected.target.q + 0.01) {
       const line = lines.find(item => item.outlets.includes(selected));
@@ -240,7 +248,7 @@ function openResponses(model) {
       throttle.append(text('関係する筒先員と連携し、実測値を確認。総送水量は照合の目安です。'));
     } else throttle.textContent = '基準筒先の目標を保ったまま、この筒先を絞って目標流量に合わせる案は成立しません。';
   }
-  $('response-reference').textContent = '圧力基準：' + reference.name;
+  $('response-reference').textContent = '対策後の圧力再計算基準：' + reference.name;
   targets.onchange = showOptions;
   showOptions();
   $('response').querySelectorAll('.response-options > details').forEach(panel => panel.open = false);
@@ -280,12 +288,23 @@ function alignHoses() {
   }
 }
 
+function toggleNozzle(branch) {
+  if (!branch.stopped) {
+    const before = calculate();
+    if (!before.fixed && before.baseline?.p > 0) data.fixedPressure = before.baseline.p;
+  }
+  branch.stopped = !branch.stopped;
+  save();
+}
+
 function render() {
   const result = calculate();
   const baseline = result.baseline;
-  $('respond').hidden = !baseline;
-  $('respond').onclick = baseline ? () => openResponses(result) : null;
-  $('pump-heading').textContent = result.reference?.branch.nozzle === 'クアドラ'
+  $('respond').hidden = !result.reference;
+  $('respond').onclick = result.reference ? () => openResponses(result) : null;
+  $('recalculate-pressure').hidden = !result.fixed;
+  $('pump-heading').textContent = result.fixed ? '固定ポンプ吐出圧力'
+    : result.reference?.branch.nozzle === 'クアドラ'
     ? '推定ポンプ圧力（クアドラ優先）' : '推定ポンプ圧力';
   $('deck').classList.toggle('flipped', Boolean(data.flipped));
   $('flip').setAttribute('aria-pressed', String(Boolean(data.flipped)));
@@ -346,7 +365,7 @@ function render() {
           warning.textContent = note.join(' ／ ');
           edit.append(warning);
         }
-        if (path.id === result.reference.id) {
+        if (!result.fixed && path.id === result.reference.id) {
           const basis = document.createElement('small');
           basis.className = 'pressure-basis';
           basis.textContent = '◆圧力基準';
@@ -356,8 +375,7 @@ function render() {
       group.append(edit);
       if (branch.active && branch.setting) {
         const stop = control(branch.stopped ? '再開' : '停止', () => {
-          branch.stopped = !branch.stopped;
-          save();
+          toggleNozzle(branch);
           $(stop.id)?.focus();
         }, label + 'の' + name + (branch.stopped ? 'を再開' : 'を停止'));
         stop.id = `stop-${key}-${branchIndex}`;
@@ -382,11 +400,11 @@ function render() {
   for (const path of result.paths) {
     const item = document.createElement('li');
     item.textContent = path.name + ' ／ 目標 ' + flowText(path.target.q) + ' ／ ' + pressureText(path.target.p)
-      + (path.id === result.reference.id ? ' ◆' : '');
+      + (!result.fixed && path.id === result.reference.id ? ' ◆' : '');
     pressurePaths.append(item);
   }
   const configured = data.lines.some(line => line.active);
-  pr.textContent = baseline ? pressureText(baseline.p) : configured && result.stopped ? '放水停止' : '— MPa';
+  pr.textContent = result.fixed ? pressureText(data.fixedPressure) : baseline ? pressureText(baseline.p) : configured && result.stopped ? '放水停止' : '— MPa';
   pr.classList.toggle('danger', !!baseline && baseline.p > 1.4);
   $('total').textContent = baseline ? '推定総送水量：' + flowText(baseline.total) : result.ok ? '' : '設定未完了';
   const alert = $('alert');
@@ -394,6 +412,7 @@ function render() {
     outletWarnings(path, baseline.nozzles[path.id]).danger.length).length : 0;
   alert.classList.toggle('danger', warningCount > 0);
   const warnings = baseline ? [pumpWarnings(baseline), warningCount ? '筒先警告 ' + warningCount + '口' : ''].filter(Boolean) : [];
+  if (result.fixed && result.ok) warnings.push(result.stopped ? '全筒先停止中' : '圧力据え置き・放水が落ち着いた後の推定');
   alert.textContent = baseline ? warnings.join(' ／ ') || '概算値：筒先と連携して調整'
     : !result.ok ? '未入力の筒先・ホースがあります'
     : configured ? '全線停止中：必要圧力は算出しません' : '';
@@ -547,6 +566,10 @@ o.append(ceilingLabel);
 if(b.nozzle==='ダブコン'){o.append(text('口径（mm）'));const g=grid(6);for(const d of nozzleDiameters)g.append(choice(d+'',()=>{partialDiameter=d;draw()},partialDiameter===d));o.append(g,text('流量（L/min）／400を超えると注意。保持限界は流量だけでは決められません。'));const f=grid(5);for(const q of [300,400,500,600,700,800,900,1000,1100,1200])f.append(choice(q+'',()=>{if(partialDiameter===null)return;b.setting=partialDiameter+'/'+q;finish()},false,q>400?'caution':''));o.append(f,text(partialDiameter===null?'先に口径を選択してください':'流量を選ぶと設定を保存します。反動力は概算で別途警告します。'))}
 else{const g=grid(4);o.append(text('公称流量レンジ（L/min）'));for(const q of [110,230,360,470])g.append(choice(q+'',()=>{partialFlow=q;draw()},partialFlow===q));o.append(g,text('ノズル圧力（MPa）'));const h=grid(3);for(const p of [0.5,0.6,0.7])h.append(choice(p.toFixed(1),()=>{if(partialFlow===null)return;b.setting=partialFlow+'/'+p;finish()}));o.append(h,text(partialFlow===null?'先に流量レンジを選択してください':'流量は0.6MPaを基準とした平方根則で概算します。'))}}
 }
+$('recalculate-pressure').onclick = () => {
+  data.fixedPressure = null;
+  save();
+};
 $('response-close').onclick = () => $('response').close();
 save();
 
@@ -571,7 +594,7 @@ $('overlay').addEventListener('close', () => {
 });
 $('reset').onclick = () => {
   if (!confirm('すべての設定を初期化しますか？')) return;
-  Object.assign(data, { flipped: false, lines: ports.map(emptyLine) });
+  Object.assign(data, { flipped: false, fixedPressure: null, lines: ports.map(emptyLine) });
   save();
 };
 new ResizeObserver(updateLayout).observe($('lines'));
