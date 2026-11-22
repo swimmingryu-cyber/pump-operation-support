@@ -135,7 +135,6 @@ html:has(.branch-hose-step[open]) { overflow: hidden; }
 }
 .lines {grid-template-rows:repeat(4,minmax(44px,auto))}
 .outlet-warning { display: block; }
-.pressure-above-target { color: #ffb5b5; }
 .low-output { color: #ffe08a; }
 .nozzle-ceiling, .long-hose-entry { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .nozzle-ceiling input, .long-hose-entry input { width: 8em; min-height: 40px; font: inherit; }
