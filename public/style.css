@@ -6,18 +6,17 @@ button { color: inherit; font: inherit; border: 1px solid #6885a3; border-radius
 button:focus-visible { outline: 3px solid #ffdb65; outline-offset: 1px; }
 button[aria-pressed=true], select.selected, input.selected { background: #285977; border-color: #a4e4ff; }
 .shell { min-height: 100dvh; display: flex; flex-direction: column; gap: 6px; padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); }
-.top, .bottom, .editor header, .editor footer { display: flex; align-items: center; gap: 6px; }
+.top, .editor header, .editor footer { display: flex; align-items: center; gap: 6px; }
 .top { flex-wrap: wrap; }
 .top strong { font-size: clamp(14px, 2.4vw, 22px); margin-right: auto; }
-.top small, .hint, .bottom { font-size: 11px; color: #c7daee; }
-.top button, .bottom button { font-size: 12px; }
-.bottom { justify-content: space-between; margin-top: auto; }
-.bottom button { flex-shrink: 0; }
+.top small, .hint { font-size: 11px; color: #c7daee; }
+.top button { font-size: 12px; }
+#reset { margin-right: 12px; }
 p { margin: 0; }
-.deck { display: grid; grid-template-columns: minmax(0, 45fr) minmax(0, 55fr); grid-template-areas: "vehicle lines"; align-items: start; }
-.deck.flipped { grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); grid-template-areas: "lines vehicle"; }
+.deck { display: grid; grid-template-columns: minmax(0, 39fr) minmax(0, 61fr); grid-template-areas: "vehicle lines"; align-items: start; }
+.deck.flipped { grid-template-columns: minmax(0, 61fr) minmax(0, 39fr); grid-template-areas: "lines vehicle"; }
 .vehicle { grid-area: vehicle; min-width: 0; }
-.map { height: max(176px, var(--lines-height, 0px)); position: relative; }
+.map { height: max(192px, var(--lines-height, 0px)); position: relative; }
 .map svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .pump-truck { transform-origin: 0 50%; transform: scaleY(var(--truck-scale, 1)); }
 .flipped .map svg { transform: scaleX(-1); }
@@ -32,18 +31,34 @@ p { margin: 0; }
 .port[data-port^=left] { --port-y: calc(50% - 34px); }
 .port[data-port^=right] { --port-y: calc(50% + 34px); }
 .pump { display: grid; gap: 2px; padding: 4px; font-size: 12px; }
-.pressure { color: #ffdb65; font-size: clamp(15px, 2.7vw, 24px); }
+.pressure-readout { display: grid; gap: 2px; }
+.pressure { color: #ffdb65; font-size: clamp(25px, 4vw, 44px); line-height: 1.05; white-space: nowrap; }
+#edit-water-settings {
+  position: absolute;
+  left: 39%;
+  top: calc(50% + 57px);
+  transform: translateX(-50%);
+  min-height: 36px;
+  padding-inline: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.flipped #edit-water-settings { left: 61%; }
 .alarm, .caution { color: #ffcf74; }
 .danger { color: #ff9999; }
 .lines { grid-area: lines; min-width: 0; display: grid; grid-template-rows: repeat(4, minmax(44px, 1fr)); gap: 4px; }
 .lines p { grid-row: 1 / -1; align-self: center; padding: 10px; color: #c7daee; }
-.line { grid-row: var(--slot); align-self: center; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.65fr); gap: 3px; padding: 3px; border-left: 3px solid #6bd4fa; border-radius: 7px; background: #172d46; }
+.line { grid-row: var(--slot); align-self: center; display: grid; grid-template-columns: minmax(74px, 1fr) minmax(0, 4fr); gap: 3px; padding: 3px; border-left: 3px solid #6bd4fa; border-radius: 7px; background: #172d46; }
 .flipped .line { border-left: 0; border-right: 3px solid #6bd4fa; }
 .line.paused { background: #463322; border-color: #ffc374; }
 .line button { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
 .line button small { display: block; color: #d3e3f3; }
 .branches { display: grid; gap: 3px; }
 .branch { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px; }
+.branch.with-hose { grid-template-columns: minmax(62px, 1fr) minmax(0, 2.55fr) auto; }
+.branch.with-hose > :last-child:nth-child(2) { grid-column: 2 / -1; }
+.line .hose-pressure-warning { border: 2px solid #ff7171; }
+.line .hose-pressure-warning small:last-child { color: #ff9b9b; font-weight: 700; }
 .branch .stop { white-space: nowrap; padding-inline: 6px; }
 .branch .stop.paused { background: #66482a; border-color: #ffc374; }
 .overlay { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #0d1929; color: #eff7ff; }
@@ -60,8 +75,8 @@ p { margin: 0; }
 .delete { background: #412830; border-color: #aa6c76; color: #ffd5d2; }
 .editor footer .hint { margin-left: auto; }
 @media (min-width: 480px) {
-  .vehicle { display: grid; grid-template-columns: minmax(100px, 39%) minmax(0, 1fr); grid-template-areas: "pump map"; align-items: center; }
-  .flipped .vehicle { grid-template-columns: minmax(0, 1fr) minmax(100px, 39%); grid-template-areas: "map pump"; }
+  .vehicle { display: grid; grid-template-columns: minmax(102px, 42%) minmax(0, 1fr); grid-template-areas: "pump map"; align-items: center; }
+  .flipped .vehicle { grid-template-columns: minmax(0, 1fr) minmax(102px, 42%); grid-template-areas: "map pump"; }
   .map { grid-area: map; align-self: start; }
   .pump { grid-area: pump; }
 }
@@ -70,6 +85,8 @@ p { margin: 0; }
   .port[data-port$=front] { --port-x: 56%; }
   .line { grid-template-columns: minmax(0, 1fr); }
   .line button { padding-inline: 3px; }
+  .branch.with-hose { grid-template-columns: minmax(48px, 1fr) minmax(0, 2fr) auto; }
+  .pressure { font-size: clamp(21px, 6vw, 28px); }
 }
 
 .elevation { display: grid; gap: 4px; }
@@ -79,9 +96,7 @@ p { margin: 0; }
 @media (max-width: 440px) {
   .elevation-choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
-#total, #pressure-details { font-size: clamp(14px, 2.2vw, 17px); color: #e1edf9; }
-#pressure-details summary, #equipment-details summary { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-#pressure-paths, #equipment-results { margin: 4px 0 0; padding-left: 16px; }
+#total { font-size: clamp(14px, 2.2vw, 17px); color: #e1edf9; }
 .line button .pressure-basis { color: #ff939a; font-size: 12px; font-weight: 700; }
 
 .hose-controls, .hose-field {
@@ -96,18 +111,9 @@ p { margin: 0; }
   overscroll-behavior: none;
 }
 html:has(.branch-hose-step[open]) { overflow: hidden; }
-.branch-hose-step .options {
-  overflow: clip;
-  padding: 3px;
-}
+.branch-hose-step .options { padding: 3px; }
 @media (orientation: landscape) {
-  .branch-hose-step .options {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-    gap: 10px;
-  }
-  .branch-hose-step .elevation-choices {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+  .branch-hose-step .hose-controls { grid-template-columns: minmax(0, 2fr) minmax(0, 5fr); }
 }
 @media (orientation: landscape) and (max-height: 280px) {
   .branch-hose-step .hose-controls {
