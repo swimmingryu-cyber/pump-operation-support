@@ -436,7 +436,9 @@ function render() {
   pr.textContent = solution ? estimatedDischargeText(solution.p)
     : configured && result.ok ? '放水停止' : '— MPa';
   pr.classList.toggle('danger', !!solution && (solution.p <= 0 || solution.p > 1.4));
-  $('total').textContent = solution ? '推定総送水量：' + estimatedFlowText(solution.total) : result.ok ? '' : '設定未完了';
+  $('total').hidden = !solution;
+  $('total-value').textContent = solution ? estimatedFlowText(solution.total) : '';
+  $('total-status').hidden = result.ok;
   const water = solution ? waterSupplyCheck(solution) : null;
   const supplyEstimate = $('supply-estimate');
   supplyEstimate.textContent = water ? water.label + ' ' + water.summary : '';
